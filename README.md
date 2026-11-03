@@ -37,11 +37,18 @@ Newer settings (encoder wrap, 4 ms exposure cap, smaller FEC blocks) cut the del
 
 ## Why 2.4 GHz
 
-In the EU, 2.4 GHz wideband equipment (EN 300 328) may transmit up to **100 mW EIRP if it uses listen-before-talk** (LBT, "adaptivity"). On 5.8 GHz (EN 300 440) the limit is **25 mW**. The lower band also propagates better. So a 2.4 GHz link with LBT may legally use four times the power of a 5.8 GHz link.
+The lower band propagates better, and with listen-before-talk (LBT, "adaptivity") it allows more power:
 
-The catch: without LBT, continuous video on 2.4 GHz is limited to 10 mW, and 2.4 GHz is crowded wherever there is Wi-Fi. In a test at school, a 2.4 GHz channel lost 30–85 % of packets while 5.8 GHz channel 149 was clean.
+| Band and mode | Limit (EIRP, antenna gain included) | Rule |
+|---|---|---|
+| 2.4 GHz with LBT | 100 mW | EN 300 328 |
+| 2.4 GHz without LBT | power × share of time transmitting ≤ 10 mW, bursts ≤ 10 ms (for Vima's video roughly 30–40 mW peak, estimated) | EN 300 328 |
+| 2.4 GHz, short-range device | 25 mW, no LBT, no time limits | Czech VO-R/10 only (EU-wide it is 10 mW) |
+| 5.8 GHz | 25 mW | EN 300 440 |
 
-So Vima uses both bands: **5.8 GHz in towns, 2.4 GHz with LBT away from buildings.** The Wi-Fi driver supports LBT, but it is not enabled yet. Until transmit power and LBT behaviour are measured in a lab, the power stays at a low setting (estimated ~8 mW EIRP on 2.4 GHz, not yet verified).
+The catch: 2.4 GHz is crowded wherever there is Wi-Fi. In a test at school, a 2.4 GHz channel lost 30–85 % of packets while 5.8 GHz channel 149 was clean.
+
+So Vima uses both bands: **5.8 GHz in towns, 2.4 GHz away from buildings.** Until the transmit power and LBT are measured in a lab, the target is at most 25 mW on both bands. 100 mW with LBT comes after that. The Wi-Fi driver supports LBT, but it is not switched on yet. Today the power is only estimated from RSSI (~8 mW EIRP at the 2.4 GHz setting, uncertainty about ±10 dB), so meeting the limit is not verified yet.
 
 ## Hardware
 
@@ -123,7 +130,7 @@ If you know the wfb-ng / OpenIPC ecosystem and see me about to make an expensive
 
 ## Disclaimer
 
-Radio regulations differ by country. The firmware is set to the CZ regulatory domain with conservative power caps. You are responsible for complying with local law on transmit power, frequency use, and where and how you fly. Test without propellers.
+Radio regulations differ by country. The firmware is set to the CZ regulatory domain with hard-coded power caps, but the actual output power has not been measured yet. You are responsible for complying with local law on transmit power, frequency use, and where and how you fly. Test without propellers.
 
 ---
 
@@ -131,4 +138,4 @@ Radio regulations differ by country. The firmware is set to the CZ regulatory do
 
 Vima je open-source digitální FPV systém: přenos videa v H.265 přes Wi-Fi (wfb-ng) na levném, běžně dostupném hardwaru. Vzniká jako maturitní projekt.
 
-Stav v listopadu 2026: obraz z kamery jde vzduchem do notebooku, spoj funguje oběma směry a nejlepší naměřená latence sklo–sklo je 52 ms. Na řadě je test dosahu venku a změření výkonu a LBT v laboratoři. Na 2,4 GHz je v EU povoleno až 100 mW EIRP, ale jen s LBT; na 5,8 GHz 25 mW. Proto Vima používá ve městě 5,8 GHz a mimo zástavbu 2,4 GHz s LBT.
+Stav v listopadu 2026: obraz z kamery jde vzduchem do notebooku, spoj funguje oběma směry a nejlepší naměřená latence sklo–sklo je 52 ms. Na řadě je test dosahu venku a změření výkonu a LBT v laboratoři. Na 2,4 GHz smí zařízení s LBT vysílat až 100 mW EIRP (EN 300 328), bez LBT v ČR 25 mW (VO-R/10), na 5,8 GHz 25 mW. Vima proto používá ve městě 5,8 GHz a mimo zástavbu 2,4 GHz; 100 mW s LBT až po změření výkonu a LBT v laboratoři.
