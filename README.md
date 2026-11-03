@@ -1,17 +1,47 @@
 # Vima
 
-**An open-source digital FPV video transmission system.**
+**Open-source digital FPV video system.** Low-latency H.265 video over Wi-Fi from cheap, off-the-shelf parts: a Rockchip RV1106 board, a 3 MP camera and an RTL8812AU Wi-Fi adapter.
 
-Low-latency H.265 video over Wi-Fi (wfb-ng), built on cheap, off-the-shelf hardware: a Rockchip RV1106 board, a 3 MP camera and an RTL8812AU Wi-Fi adapter. No vendor lock-in, no proprietary goggles.
+A graduation project by a secondary school student from the Czech Republic. Working prototype on the bench, not flying yet. · [Česky](#česky)
 
-> **Status (November 2026): working prototype on the bench.** Live video goes from the air unit to a Linux laptop over the air, and a two-way link runs back to the board. Measured glass-to-glass latency: **45 ms** on average. Not flying yet. Outdoor range tests and lab measurements of transmit power and listen-before-talk come next.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/latency-dark.png">
+  <img alt="Glass-to-glass latency went from 106 ms on 25 October to 45 ms on 3 November 2026" src="docs/img/latency-light.png">
+</picture>
+
+## At a glance
+
+| | |
+|---|---|
+| **Latency** | 45 ms glass-to-glass, on average |
+| **Video** | H.265, 1152×648 at 55 fps |
+| **Radio** | [wfb-ng](https://github.com/svpcom/wfb-ng) over Wi-Fi, 2.4 or 5.8 GHz |
+| **Air unit** | Luckfox Pico Pro Max (RV1106G3), SC3336 camera, RTL8812AU USB adapter |
+| **Ground station** | Linux laptop with an RTL8812AU adapter |
+| **Also** | two-way link to the air unit, picture recovery after packet loss in ~100 ms, bitrate that adapts to the signal |
+
+## Next
+
+- Outdoor range test on 2.4 and 5.8 GHz
+- Transmit power and listen-before-talk measured in a lab
+- Test enclosure, then onto a drone
+
+## Follow along
+
+- **Instagram:** [@maty7_fpv](https://www.instagram.com/maty7_fpv/)
+- **YouTube:** [@matyasmikes9073](https://www.youtube.com/@matyasmikes9073)
+- **Issues** here for bugs, questions and hardware suggestions
+
+If you know the wfb-ng / OpenIPC ecosystem and see me about to make an expensive mistake, please say so early.
 
 ---
+
+# Details
 
 ## What works today
 
 - Camera → hardware H.265 encoder → RTP → wfb-ng, all on the RV1106 board, started automatically at boot
-- **1152×648 at 55 or 60 fps** from a custom 2×2-binning mode of the SC3336 sensor
+- **1152×648 at 55 or 60 fps** from a custom mode of the SC3336 sensor
 - Ground station on a Linux laptop: wfb-ng receiver, full-screen GStreamer playback, control panel
 - **Two-way link:** an IP tunnel over the air (SSH to the air unit while it is transmitting, ~16 ms ping)
 - **Keyframe on request:** after packet loss the ground station asks for a new keyframe, and the picture recovers in ~100 ms instead of ~490 ms
@@ -35,6 +65,8 @@ The 3 Nov settings cut the delay on the board from 22.5 ms to 18.5 ms per frame 
 - Transfer at MCS 4 on channel 149 (3 Nov): 54.8 fps received, longest gap 40 ms, 0 lost packets
 - Link capacity at MCS 4: ~9.7 Mbit/s. Above that, the board's single Cortex-A7 core is the bottleneck.
 - Range indoors: ~10 m through walls at low power. Outdoor range is not measured yet.
+
+Raw data and graphs: [`docs/measurements`](docs/measurements).
 
 ## Why 2.4 GHz
 
@@ -112,16 +144,6 @@ Not included: the wfb-ng keys (generate your own), the Luckfox SDK itself, compi
 I'm a secondary school student in the Czech Republic and this is my graduation project: solo, on a small budget, with a hard deadline.
 
 **I'm not a programmer.** I do the system architecture, hardware selection, bring-up, the physical work and the testing. Claude (Anthropic's AI, through Claude Code with access to my laptop) writes most of the code, builds the firmware and runs the measurements. Commits it worked on say so with a `Co-Authored-By: Claude` line.
-
-## Follow along
-
-Short clips from the bench go up as things happen:
-
-- **Instagram:** [@maty7_fpv](https://www.instagram.com/maty7_fpv/)
-- **YouTube:** [@matyasmikes9073](https://www.youtube.com/@matyasmikes9073)
-- **Issues** here for bugs, questions and hardware suggestions
-
-If you know the wfb-ng / OpenIPC ecosystem and see me about to make an expensive mistake, please say so early.
 
 ## License
 
