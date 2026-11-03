@@ -1,0 +1,313 @@
+#!/bin/sh
+# Vima: nacte ovladac RTL8812AU, ceka na kartu, nastavi monitor mod
+# a drzi bezici wfb_tx (i po odpojeni a znovuzapojeni karty).
+# S TUN_ENABLE=1 navic obousmerny IP tunel: wfb_tun (rozhrani wfb-tun) <-> wfb_tx/wfb_rx.
+
+CONF=${VIMA_CONF:-/etc/vima/vima.conf}
+[ -f "$CONF" ] && . "$CONF"
+
+: "${WFB_IF:=wfb0}" "${WFB_CHANNEL:=149}" "${WFB_BW:=HT20}" "${WFB_TXPWR_IDX:=10}"
+: "${WFB_MCS:=3}" "${WFB_FEC_K:=8}" "${WFB_FEC_N:=16}" "${WFB_FEC_TIMEOUT:=5}"
+: "${WFB_RADIO_PORT:=0}" "${WFB_UDP_PORT:=5602}" "${WFB_KEY:=/etc/vima/drone.key}"
+: "${WFB_STBC:=0}" "${WFB_LDPC:=0}"
+: "${REGDOM:=CZ}" "${TESTGEN_ENABLE:=0}" "${TESTGEN_KBPS:=2000}"
+: "${VIDEO_ENABLE:=0}" "${VIDEO_URL:=rtsp://127.0.0.1:554/live/0}"
+: "${TUN_ENABLE:=0}" "${TUN_IF:=wfb-tun}" "${TUN_ADDR:=10.5.0.2/24}" "${TUN_AGG_MS:=5}"
+: "${TUN_TX_PORT:=32}" "${TUN_RX_PORT:=160}" "${TUN_FEC_K:=1}" "${TUN_FEC_N:=2}" "${TUN_RATE_KBIT:=0}"
+: "${WFB_CTRL_PORT:=8000}" "${TUN_CTRL_PORT:=8001}" "${CTL_ENABLE:=0}"
+
+LOG=/tmp/vima-wfb.log
+TXLOG=/tmp/wfb_tx.log
+TUNLOG=/tmp/wfb_tun.log
+TUNTXLOG=/tmp/wfb_tun_tx.log
+TUNRXLOG=/tmp/wfb_tun_rx.log
+# lokalni UDP porty: wfb_tun -> wfb_tx (5801), wfb_rx -> wfb_tun (5800)
+TUN_UDP_TX=5801
+TUN_UDP_RX=5800
+TUN_KO=/lib/modules/5.10.160/extra/tun.ko
+CTLLOG=/tmp/vima-ctl.log
+KO_DIR=/oem/usr/ko
+WFB_KO=${VIMA_KO:-/lib/modules/5.10.160/extra/88XXau_wfb.ko}
+MAXLOG=1048576
+
+log() {
+	echo "$(date '+%F %T') $*" >> "$LOG"
+	logger -t vima-wfb "$*"
+}
+
+trim_log() {
+	[ -f "$1" ] || return 0
+	[ "$(wc -c < "$1")" -gt "$MAXLOG" ] && : > "$1"
+}
+
+# Vykon podle pasma: WFB_TXPWR_IDX_2G / _5G, jinak spolecny WFB_TXPWR_IDX.
+# Vzdy 1..zakonny strop (2,4 GHz 50, 5,8 GHz 20); 0 nebo zaporne cislo by ovladac vzal jako tovarni
+# (neomezeny) vykon, nesmyslna hodnota -> nejnizsi spolecny strop.
+pwr_idx() {
+	if [ "$WFB_CHANNEL" -le 14 ] 2>/dev/null; then
+		P=${WFB_TXPWR_IDX_2G:-$WFB_TXPWR_IDX}; MAXP=50
+	else
+		P=${WFB_TXPWR_IDX_5G:-$WFB_TXPWR_IDX}; MAXP=20
+	fi
+	case "$P" in ''|*[!0-9]*) P=20 ;; esac
+	[ "$P" -lt 1 ] && P=1
+	[ "$P" -gt "$MAXP" ] && P=$MAXP
+	echo "$P"
+}
+
+# Povolene kanaly (bez DFS a bez 36-48 = jen uvnitr)
+ch_ok() {
+	case "$1" in
+		1|2|3|4|5|6|7|8|9|10|11|12|13|149|153|157|161|165) return 0 ;;
+	esac
+	return 1
+}
+
+reg_ok() {
+	iw reg get 2>/dev/null | grep -q "country $REGDOM:"
+}
+
+load_modules() {
+	# sha256 musi byt nacteny pred cfg80211, jinak jadro neoveri podpis regulatory.db
+	[ -d /sys/module/sha256_generic ] || insmod "$KO_DIR/sha256_generic.ko"
+	# cfg80211 uz nacetl nekdo jiny bez sha256 -> pokud ho nic nepouziva, nacist znovu
+	if [ -d /sys/module/cfg80211 ] && ! reg_ok; then
+		iw reg set "$REGDOM" 2>/dev/null
+		sleep 1
+		if ! reg_ok && [ "$(cat /sys/module/cfg80211/refcnt 2>/dev/null)" = "0" ]; then
+			log "cfg80211 bez overene regulatory.db, nacitam znovu"
+			rmmod cfg80211
+		fi
+	fi
+	[ -d /sys/module/cfg80211 ] || insmod "$KO_DIR/cfg80211.ko" ieee80211_regdom="$REGDOM"
+	# pri nacteni nejnizsi spolecny strop obou pasem (20), skutecny vykon nastavi setup_if
+	[ -d /sys/module/88XXau_wfb ] || insmod "$WFB_KO" ifname=wfb%d \
+		rtw_tx_pwr_idx_override=20 rtw_switch_usb_mode=0
+	reg_ok || { iw reg set "$REGDOM" 2>/dev/null; sleep 1; }
+	if reg_ok; then
+		log "regulacni domena $REGDOM"
+	else
+		log "CHYBA: regulacni domena neni $REGDOM (kanal $WFB_CHANNEL muze byt zakazany)"
+	fi
+	if [ -d /sys/module/88XXau_wfb ]; then
+		log "ovladac nacten"
+	else
+		log "CHYBA: ovladac 88XXau_wfb se nenacetl"
+	fi
+	if [ "$TUN_ENABLE" = "1" ] && [ ! -e /dev/net/tun ]; then
+		insmod "$TUN_KO" || log "CHYBA: tun.ko se nenacetl (tunel nepojede)"
+	fi
+}
+
+# Najde rozhrani karty: preferuje $WFB_IF, jinak prvni rozhrani s ovladacem rtl88xxau_wfb
+find_if() {
+	if [ -e "/sys/class/net/$WFB_IF" ]; then
+		echo "$WFB_IF"
+		return 0
+	fi
+	for n in /sys/class/net/*; do
+		drv=$(basename "$(readlink "$n/device/driver" 2>/dev/null)" 2>/dev/null)
+		if [ "$drv" = "rtl88xxau_wfb" ]; then
+			basename "$n"
+			return 0
+		fi
+	done
+	return 1
+}
+
+setup_if() {
+	# kanal mohl zmenit vima-ctl (prepnuti ze zeme se uklada do vima.conf) -> nacist znovu
+	[ -f "$CONF" ] && . "$CONF"
+	if ! ch_ok "$WFB_CHANNEL"; then
+		log "CHYBA: kanal $WFB_CHANNEL neni povoleny (1-13, 149-165), nevysilam"
+		return 1
+	fi
+	PWR=$(pwr_idx)
+	# spolecny zamek s vima-ctl.py (prepinani kanalu za behu)
+	exec 9> /var/run/vima-radio.lock
+	flock 9
+	ip link set "$1" down
+	iw dev "$1" set monitor otherbss || { flock -u 9; return 1; }
+	ip link set "$1" up || { flock -u 9; return 1; }
+	# vykon pred kanalem: ovladac pri zmene kanalu hned pouzije aktualni index
+	echo "$PWR" > /sys/module/88XXau_wfb/parameters/rtw_tx_pwr_idx_override || { flock -u 9; return 1; }
+	iw dev "$1" set channel "$WFB_CHANNEL" "$WFB_BW" || { flock -u 9; return 1; }
+	iw dev "$1" set txpower fixed "-$((PWR * 100))" || { flock -u 9; return 1; }
+	flock -u 9
+	NOW=$(cat /sys/module/88XXau_wfb/parameters/rtw_tx_pwr_idx_override 2>/dev/null)
+	if [ "$NOW" != "$PWR" ]; then
+		log "CHYBA: vykon index $NOW misto $PWR, nevysilam"
+		return 1
+	fi
+	log "$1: kanal $WFB_CHANNEL, vykon index $NOW"
+}
+
+testgen_loop() {
+	while true; do
+		trim_log "$LOG"
+		${VIMA_TESTGEN:-/usr/bin/vima-testgen.py} 127.0.0.1 "$WFB_UDP_PORT" "$TESTGEN_KBPS" >> "$LOG" 2>&1
+		sleep 2
+	done
+}
+
+video_loop() {
+	while true; do
+		trim_log "$LOG"
+		${VIMA_VIDEO:-/usr/bin/vima-video.py} "$VIDEO_URL" "$WFB_UDP_PORT" >> "$LOG" 2>&1
+		sleep 2
+	done
+}
+
+# wfb_tun nezavisi na karte: bezi ve vlastni smycce, rozhrani zustava i pri vypadku karty
+tun_loop() {
+	while true; do
+		trim_log "$TUNLOG"
+		wfb_tun -t "$TUN_IF" -a "$TUN_ADDR" -c 127.0.0.1 -u "$TUN_UDP_TX" -l "$TUN_UDP_RX" \
+			-T "$TUN_AGG_MS" >> "$TUNLOG" 2>&1
+		sleep 2
+	done
+}
+
+# ovladani ze zeme (vima-ctl.py, UDP 5900 pres tunel)
+ctl_loop() {
+	while true; do
+		trim_log "$CTLLOG"
+		/usr/bin/vima-ctl.py >> "$CTLLOG" 2>&1
+		sleep 2
+	done
+}
+
+# radiova cast tunelu na karte $1 (vola se po setup_if, vedle video wfb_tx)
+start_tun_tx() {
+	wfb_tx -K "$WFB_KEY" -f data -p "$TUN_TX_PORT" -u "$TUN_UDP_TX" \
+		-k "$TUN_FEC_K" -n "$TUN_FEC_N" -T 0 -F 0 -M "$WFB_MCS" -S "$WFB_STBC" -L "$WFB_LDPC" -B 20 \
+		-C "$TUN_CTRL_PORT" "$1" >> "$TUNTXLOG" 2>&1 &
+	TTXPID=$!
+}
+start_tun_rx() {
+	wfb_rx -K "$WFB_KEY" -p "$TUN_RX_PORT" -c 127.0.0.1 -u "$TUN_UDP_RX" "$1" >> "$TUNRXLOG" 2>&1 &
+	TRXPID=$!
+}
+stop_tun_radio() {
+	[ -n "$TTXPID" ] && kill "$TTXPID" 2>/dev/null
+	[ -n "$TRXPID" ] && kill "$TRXPID" 2>/dev/null
+	TTXPID=""
+	TRXPID=""
+}
+
+# strop toku z desky do tunelu (jadro desky nema tc -> iptables hashlimit, nadbytek se zahodi, TCP zpomali)
+tun_limit() {
+	R=$((TUN_RATE_KBIT / 8))
+	B=$((R + 16))
+	iptables -D OUTPUT -o "$TUN_IF" -m hashlimit --hashlimit-name vimatun --hashlimit-above "${R}kb/s" \
+		--hashlimit-burst "${B}kb" -j DROP 2>/dev/null
+	[ "$TUN_RATE_KBIT" -gt 0 ] || return 0
+	iptables -A OUTPUT -o "$TUN_IF" -m hashlimit --hashlimit-name vimatun --hashlimit-above "${R}kb/s" \
+		--hashlimit-burst "${B}kb" -j DROP && log "tunel z desky omezen na $TUN_RATE_KBIT kbit/s"
+}
+
+TGPID=""
+VIDPID=""
+TXPID=""
+TUNPID=""
+TTXPID=""
+TRXPID=""
+CTLPID=""
+cleanup() {
+	[ -n "$CTLPID" ] && kill "$CTLPID" 2>/dev/null
+	[ -n "$TXPID" ] && kill "$TXPID" 2>/dev/null
+	stop_tun_radio
+	[ -n "$TUNPID" ] && kill "$TUNPID" 2>/dev/null
+	[ -n "$TGPID" ] && kill "$TGPID" 2>/dev/null
+	[ -n "$VIDPID" ] && kill "$VIDPID" 2>/dev/null
+	killall vima-testgen.py vima-video.py wfb_tun vima-ctl.py 2>/dev/null
+	exit 0
+}
+trap cleanup TERM INT
+
+[ -f "$WFB_KEY" ] && chmod 600 "$WFB_KEY"
+log "start (kanal $WFB_CHANNEL $WFB_BW, MCS $WFB_MCS, STBC $WFB_STBC, LDPC $WFB_LDPC, FEC $WFB_FEC_K/$WFB_FEC_N, UDP $WFB_UDP_PORT)"
+load_modules
+
+if [ "$VIDEO_ENABLE" = "1" ]; then
+	video_loop &
+	VIDPID=$!
+	log "video z kamery zapnuto ($VIDEO_URL)"
+	if [ "$TESTGEN_ENABLE" = "1" ]; then
+		log "testovaci data vypinam (nesmi se michat s videem)"
+		TESTGEN_ENABLE=0
+	fi
+fi
+
+if [ "$TESTGEN_ENABLE" = "1" ]; then
+	testgen_loop &
+	TGPID=$!
+	log "testovaci data zapnuta ($TESTGEN_KBPS kbit/s)"
+fi
+
+if [ "$TUN_ENABLE" = "1" ]; then
+	tun_limit
+	tun_loop &
+	TUNPID=$!
+	log "tunel zapnut ($TUN_IF $TUN_ADDR, radio porty TX $TUN_TX_PORT / RX $TUN_RX_PORT)"
+	if [ "$CTL_ENABLE" = "1" ]; then
+		ctl_loop &
+		CTLPID=$!
+		log "ovladani ze zeme zapnuto (vima-ctl, UDP 5900)"
+	fi
+fi
+
+waiting=0
+while true; do
+	trim_log "$LOG"
+	trim_log "$TXLOG"
+	IF=$(find_if)
+	if [ -z "$IF" ]; then
+		[ "$waiting" = 0 ] && log "cekam na kartu (USB host mod? napajeni?)"
+		waiting=1
+		sleep 1
+		continue
+	fi
+	waiting=0
+	if ! setup_if "$IF"; then
+		log "CHYBA: nastaveni $IF selhalo, zkusim znovu"
+		sleep 2
+		continue
+	fi
+	log "$IF: monitor, kanal $WFB_CHANNEL, spoustim wfb_tx"
+	wfb_tx -K "$WFB_KEY" -p "$WFB_RADIO_PORT" -u "$WFB_UDP_PORT" \
+		-k "$WFB_FEC_K" -n "$WFB_FEC_N" -M "$WFB_MCS" -S "$WFB_STBC" -L "$WFB_LDPC" -T "$WFB_FEC_TIMEOUT" -B 20 \
+		-C "$WFB_CTRL_PORT" "$IF" >> "$TXLOG" 2>&1 &
+	TXPID=$!
+	if [ "$TUN_ENABLE" = "1" ]; then
+		start_tun_tx "$IF"
+		start_tun_rx "$IF"
+	fi
+	while kill -0 "$TXPID" 2>/dev/null && [ -e "/sys/class/net/$IF" ]; do
+		sleep 1
+		trim_log "$TXLOG"
+		trim_log "$LOG"
+		trim_log "$CTLLOG"
+		if [ "$TUN_ENABLE" = "1" ]; then
+			trim_log "$TUNTXLOG"
+			trim_log "$TUNRXLOG"
+			# spadly proces tunelu restartovat samostatne, video bezi dal
+			kill -0 "$TTXPID" 2>/dev/null || { log "tunel wfb_tx skoncil, restartuji"; start_tun_tx "$IF"; }
+			kill -0 "$TRXPID" 2>/dev/null || { log "tunel wfb_rx skoncil, restartuji"; start_tun_rx "$IF"; }
+			# bez IPv6 na tunelu (zbytecne pakety do vzduchu)
+			D=/proc/sys/net/ipv6/conf/$TUN_IF/disable_ipv6
+			[ -f "$D" ] && [ "$(cat "$D")" = "0" ] && echo 1 > "$D"
+		fi
+	done
+	stop_tun_radio
+	if [ -e "/sys/class/net/$IF" ]; then
+		wait "$TXPID"
+		log "wfb_tx skoncil (kod $?), restartuji"
+	else
+		kill "$TXPID" 2>/dev/null
+		wait "$TXPID" 2>/dev/null
+		log "karta $IF zmizela, cekam na ni"
+	fi
+	TXPID=""
+	sleep 1
+done

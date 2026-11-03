@@ -1,0 +1,17 @@
+Vima: Buildroot - knihovny a nastroje pro wfb-ng (libpcap, libsodium, iw, wireless-regdb)
+
+Ve firmwaru: ano (fw-krok4).
+
+diff --git a/sysdrv/tools/board/buildroot/luckfox_pico_defconfig b/sysdrv/tools/board/buildroot/luckfox_pico_defconfig
+index 681b264..4c907b0 100644
+--- a/sysdrv/tools/board/buildroot/luckfox_pico_defconfig
++++ b/sysdrv/tools/board/buildroot/luckfox_pico_defconfig
+@@ -74,3 +74,8 @@ BR2_PACKAGE_HTOP=y
+ BR2_PACKAGE_UTIL_LINUX_LIBMOUNT=y
+ BR2_PACKAGE_NANO=y
+ BR2_PACKAGE_HOST_DTC=y
++# Vima: wfb-ng na desce
++BR2_PACKAGE_LIBPCAP=y
++BR2_PACKAGE_LIBSODIUM=y
++BR2_PACKAGE_IW=y
++BR2_PACKAGE_WIRELESS_REGDB=y

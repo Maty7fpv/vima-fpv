@@ -1,0 +1,8 @@
+== K1-1vlevo-2vpravo, STBC 0, index 30
+okno 20 s: prijato 9452 paketu, FEC opravil 183, nezachraneno 0 (v 0 s), vystup 244.2 paketu/s
+  2472 MHz anténa 0: RSSI prumer -43.5 dBm (min -60), SNR prumer 25.6 dB (min 3)
+  2472 MHz anténa 1: RSSI prumer -55.5 dBm (min -68), SNR prumer 15.9 dB (min -3)
+== K1-1vlevo-2vpravo, STBC 1, index 30
+okno 20 s: prijato 9352 paketu, FEC opravil 343, nezachraneno 0 (v 0 s), vystup 243.9 paketu/s
+  2472 MHz anténa 0: RSSI prumer -42.2 dBm (min -50), SNR prumer 27.5 dB (min 7)
+  2472 MHz anténa 1: RSSI prumer -42.2 dBm (min -46), SNR prumer 26.8 dB (min 0)

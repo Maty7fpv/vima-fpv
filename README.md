@@ -2,115 +2,133 @@
 
 **An open-source digital FPV video transmission system.**
 
-Low-latency H.265 video over Wi-Fi, built on cheap, off-the-shelf hardware. No vendor lock-in, no proprietary goggles, no binding to one ecosystem.
+Low-latency H.265 video over Wi-Fi (wfb-ng), built on cheap, off-the-shelf hardware: a Rockchip RV1106 board, a 3 MP camera and an RTL8812AU Wi-Fi adapter. No vendor lock-in, no proprietary goggles.
 
-> **Status: early development.** Hardware is on the way. The architecture is settled, the software stack is chosen, and the first parts are on the bench. Nothing flies yet. Follow along — I'm documenting the whole thing from zero.
+> **Status (November 2026): working prototype on the bench.** Live video goes from the air unit to a Linux laptop over the air, and a two-way link runs back to the board. Best measured glass-to-glass latency so far: **52 ms**. Not flying yet. Outdoor range tests and lab measurements of transmit power and listen-before-talk come next.
 
 ---
 
-## Why another FPV system?
+## What works today
 
-Because in Europe, the legal situation makes 2.4 GHz the better band and nobody is using it.
+- Camera → hardware H.265 encoder → RTP → wfb-ng, all on the RV1106 board, started automatically at boot
+- **1152×648 at 55 or 60 fps** from a custom 2×2-binning mode of the SC3336 sensor
+- Ground station on a Linux laptop: wfb-ng receiver, full-screen GStreamer playback, control panel
+- **Two-way link:** an IP tunnel over the air (SSH to the air unit while it is transmitting, ~16 ms ping)
+- **Keyframe on request:** after packet loss the ground station asks for a new keyframe, and the picture recovers in ~100 ms instead of ~490 ms
+- **Adaptive link:** the ground station reports link quality five times per second, and the air unit picks the MCS (0–4) and bitrate to match
+- Bitrate, frame rate, resolution, transmit power, channel and band can all be changed from the ground
+- Regulatory domain CZ, transmit power caps hard-coded in the firmware
 
-EU regulations allow **100 mW EIRP on 2.4 GHz**, but only **25 mW on 5.8 GHz**. Every mainstream digital FPV system (DJI, Walksnail, HDZero) transmits on 5.8 GHz. Combined with the better propagation of the lower band, a legally-compliant 2.4 GHz link can outrange a legally-compliant 5.8 GHz link — by a lot.
+## Measurements
 
-Vima is built around that. One band, one channel, done properly.
+Glass-to-glass latency: a stopwatch on screen, filmed at 480 fps together with the ground station display (240 Hz laptop panel), indoors.
 
-Beyond that:
+| Date | Video mode | Latency |
+|---|---|---|
+| 25 Oct 2026 | 2304×1296 @ 25 fps | 106 ms (72–174) |
+| 25 Oct 2026 | 1280×720 @ 30 fps | 83 ms (60–140) |
+| 27 Oct 2026 | 1152×648 @ 60 fps | 52 ms |
 
-- **Open.** Firmware, carrier board schematics, and build instructions are public. Repair it, modify it, fork it.
-- **Cheap.** The whole air unit is built from parts you can order today for a fraction of a DJI unit.
-- **Not a walled garden.** The long-term goal is a ground station with HDMI output, so you can use goggles you already own.
+Newer settings (encoder wrap, 4 ms exposure cap, smaller FEC blocks) cut the delay on the board from 22.5 ms to 18.5 ms per frame. Their glass-to-glass latency has not been measured yet.
 
-## Target specifications (graduation-project version)
+- 30 s transfer at MCS 4: 54.6 fps received, longest gap 42 ms, 0 lost packets
+- Link capacity at MCS 4: ~9.7 Mbit/s. Above that, the board's single Cortex-A7 core is the bottleneck.
+- Range indoors: ~10 m through walls at low power. Outdoor range is not measured yet.
 
-| | |
-|---|---|
-| Resolution | 1080p60 (1080p30 guaranteed, 60 experimental) |
-| Codec | H.265 / HEVC, hardware encoder |
-| Glass-to-glass latency | ~35–45 ms (target) |
-| Band | 2.4 GHz, single fixed channel |
-| Protocol | wfb-ng / wifibroadcast |
-| Air unit size | 30×30 mm SoM on a custom carrier board |
+## Why 2.4 GHz
+
+In the EU, 2.4 GHz wideband equipment (EN 300 328) may transmit up to **100 mW EIRP if it uses listen-before-talk** (LBT, "adaptivity"). On 5.8 GHz (EN 300 440) the limit is **25 mW**. The lower band also propagates better. So a 2.4 GHz link with LBT may legally use four times the power of a 5.8 GHz link.
+
+The catch: without LBT, continuous video on 2.4 GHz is limited to 10 mW, and 2.4 GHz is crowded wherever there is Wi-Fi. In a test at school, a 2.4 GHz channel lost 30–85 % of packets while 5.8 GHz channel 149 was clean.
+
+So Vima uses both bands: **5.8 GHz in towns, 2.4 GHz with LBT away from buildings.** The Wi-Fi driver supports LBT, but it is not enabled yet. Until transmit power and LBT behaviour are measured in a lab, the power stays at a low setting (estimated ~8 mW EIRP on 2.4 GHz, not yet verified).
 
 ## Hardware
 
-**Air unit**
-- **SoC:** Rockchip RV1106G3 — Luckfox Pico Pro Max for development, Luckfox Core1106 SoM (30×30 mm) as the production target
-- **Camera:** SC3336 sensor over MIPI CSI
-- **Wi-Fi:** RTL8812AU-based card in monitor mode with packet injection
-- **Power:** VBAT from ESC pads → 5 V / 3–5 A step-down, with a low-ESR bulk capacitor right at the Wi-Fi card (TX bursts will otherwise brown it out — this bit is not optional)
+**Air unit (current prototype)**
+- **Board:** Luckfox Pico Pro Max — Rockchip RV1106G3, single Cortex-A7, 256 MB RAM, 256 MB SPI NAND
+- **Camera:** SmartSens SC3336, 3 MP, MIPI CSI
+- **Wi-Fi:** RTL8812AU USB adapter on the board's USB-C port (host mode), monitor mode with packet injection
+- **Enclosure:** 3D-printed test box (in progress)
 
 **Ground station**
-- Linux laptop running wfb-ng, same RTL8812AU card
+- Linux laptop with an RTL8812AU adapter running wfb-ng
 
-> **A note on the Wi-Fi chipset:** the newer RTL8812**EU** has a known bug where 2.4 GHz monitor mode fails despite working fine in managed mode. The older **AU** variant is the correct choice here.
+**Control link:** the drone is flown over a separate ELRS 868 MHz link, so the RC failsafe stays independent of the video link.
+
+> **A note on the Wi-Fi chipset:** the newer RTL8812**EU** has a known bug where 2.4 GHz monitor mode fails. The older **AU** is the safe choice.
 
 ## Software
 
-- **Buildroot** — minimal image, fast boot, no package manager overhead
-- **wfb-ng / wifibroadcast** — the radio link layer
-- **rockit / RKMPI** — the RV1106 video pipeline (note: this is *not* the same as Rockchip MPP, which is RK3576 and up)
+**Air unit:** Luckfox Pico SDK (Buildroot 2023.02.6, Linux 5.10.160) with
+- [svpcom's RTL8812AU driver](https://github.com/svpcom/rtl8812au) (`88XXau_wfb`) and [wfb-ng](https://github.com/svpcom/wfb-ng) 25.01, cross-compiled
+- a modified `rkipc` (Rockchip's camera application): H.265 RTP straight into `wfb_tx`, keyframe on request, encoder wrap mode for lower latency
+- a custom 1152×648 @ 60 fps mode in the SC3336 kernel driver, with its own ISP tuning
+- boot services for the radio, video, the IP tunnel and a small control daemon (`vima-ctl`)
 
-## What makes it different
+**Ground station:** `wfb_rx` → GStreamer window, plus Python tools for link-quality feedback and remote control.
 
-Two things I haven't seen done well elsewhere:
+## Repository layout
 
-**Detachable IMU module for Gyroflow.** An onboard ICM-42688-P logs gyro data alongside the video for post-flight stabilization. On top of that: a tiny (~10×10 mm) external IMU module on a 4-wire I²C / JST-SH connector, which you can stick to *any* camera — a GoPro, an action cam, whatever — and get proper Gyroflow logs from it. Autodetected at boot via WHO_AM_I.
+| Folder | What's inside |
+|---|---|
+| [`air`](air) | Air unit: root filesystem overlay, patches to the Luckfox SDK, low-latency camera and encoder setup ([details](air/README.md)) |
+| [`ground`](ground) | Ground station: IP tunnel, video window, control panel, flashing ([details](ground/README.md)) |
+| [`measurement`](measurement) | Latency, keyframe recovery, link capacity and adaptive link measurements |
+| [`docs`](docs) | Measurement data, graphs and development notes (in Czech) |
 
-**Parallel microSD recording.** The same encoded H.265 stream that goes out over the air also gets written to a microSD card, with no re-encode and no extra encoder load.
+Not included: the wfb-ng keys (generate your own), the Luckfox SDK itself, compiled binaries and firmware images. Most scripts still use absolute paths from the development laptop.
 
 ## Roadmap
 
-**Now — graduation project (fixed deadline, minimal budget)**
-- [ ] Boot Buildroot on Luckfox Pico Pro Max
-- [ ] Camera → hardware encoder pipeline running
-- [ ] wfb-ng link up, air ↔ ground
-- [ ] End-to-end video on the ground station
-- [ ] Latency measurement (240 fps slow-motion against a stopwatch)
-- [ ] Range test
-- [ ] Custom carrier board for the Core1106 SoM
+**Graduation project (deadline April 2027)**
+- [x] Buildroot on the Luckfox Pico Pro Max
+- [x] Camera → hardware encoder pipeline
+- [x] wfb-ng link, air ↔ ground, both directions
+- [x] End-to-end video on the ground station
+- [x] Latency measurement (480 fps camera against a stopwatch)
+- [ ] Outdoor range test, 2.4 and 5.8 GHz
+- [ ] Transmit power and LBT measured in a lab, LBT switched on
+- [ ] Stability: hardware watchdog, flash checks
+- [ ] Test enclosure, then onto a drone
 - [ ] H.265 recording to microSD *(stretch)*
-- [ ] IMU logging + external IMU connector *(stretch)*
+- [ ] IMU logging for Gyroflow + external IMU connector *(stretch)*
 
 **Later**
-- RC-over-link: transmitter → USB HID → wfb-ng tunnel → emulated CRSF receiver on the flight controller's UART
+- Custom carrier board for the Luckfox Core1106 SoM
 - Flagship air unit on RK3576, dual-band, dual-stream (4K recording + 1080p120 transmission)
 - **Cortex VRX** — a ground station box with HDMI output, so existing goggles work
 
 ## How this is being built
 
-I'm a secondary school student in the Czech Republic and this started as my graduation project. I'm solo on it, on a small budget, with a hard deadline.
+I'm a secondary school student in the Czech Republic and this is my graduation project: solo, on a small budget, with a hard deadline.
 
-I should be upfront about the workflow: **I'm not a programmer.** I do the system architecture, hardware selection, board design, bring-up, measurement and debugging. Claude writes most of the implementation code. I read it, flash it, test it on real hardware, and report back what actually happened — which, so far, is usually "not that."
-
-I'm mentioning this because it will be obvious from the commit history anyway, and because I think it's a reasonable way to build things in 2026. Nothing here gets committed without running on real silicon first.
+**I'm not a programmer.** I do the system architecture, hardware selection, bring-up, the physical work and the testing. Claude (Anthropic's AI, through Claude Code with access to my laptop) writes most of the code, builds the firmware and runs the measurements. Commits it worked on say so with a `Co-Authored-By: Claude` line.
 
 ## Follow along
 
-I'm recording the whole process — first boots, hardware arriving, things catching fire. Short clips go up as they happen.
+Short clips from the bench go up as things happen:
 
-- **Issues** — bugs, questions, hardware suggestions
-- **Discussions** — everything else
-- *(add your YouTube / Instagram / TikTok links here)*
+- **Instagram:** [@maty7_fpv](https://www.instagram.com/maty7_fpv/)
+- **YouTube:** [@matyasmikes9073](https://www.youtube.com/@matyasmikes9073)
+- **Issues** here for bugs, questions and hardware suggestions
 
 If you know the wfb-ng / OpenIPC ecosystem and see me about to make an expensive mistake, please say so early.
 
 ## License
 
-Software: **GPL-3.0** (wfb-ng-derived components require it).
-Hardware designs: **CERN-OHL-S v2**.
-
-See [LICENSE](LICENSE) and [hardware/LICENSE](hardware/LICENSE).
+- Vima's own code: **GPL-3.0** ([LICENSE](LICENSE))
+- Patches to third-party code keep its license: rkipc patches **BSD-3-Clause**, Linux kernel patches **GPL-2.0** ([air/sdk-patches](air/sdk-patches), texts in [LICENSES](LICENSES))
+- Hardware designs (when added): **CERN-OHL-S v2**
 
 ## Disclaimer
 
-Radio regulations differ by country. Vima ships configured for EU limits. It is the operator's responsibility to comply with local law regarding transmit power, frequency use, and where and how you fly. Test without propellers.
+Radio regulations differ by country. The firmware is set to the CZ regulatory domain with conservative power caps. You are responsible for complying with local law on transmit power, frequency use, and where and how you fly. Test without propellers.
 
 ---
 
 ### Česky
 
-Vima je open-source digitální FPV systém — přenos videa v H.265 přes Wi-Fi na levném, běžně dostupném hardwaru. Vzniká jako maturitní projekt. Hlavní myšlenka: v EU je na 2,4 GHz povoleno 100 mW EIRP oproti 25 mW na 5,8 GHz, kde vysílá úplně všechno ostatní — legálně tedy delší dosah než komerční systémy.
+Vima je open-source digitální FPV systém: přenos videa v H.265 přes Wi-Fi (wfb-ng) na levném, běžně dostupném hardwaru. Vzniká jako maturitní projekt.
 
-Zatím se čeká na hardware. Vývoj dokumentuji průběžně, veškerý postup je veřejný.
+Stav v listopadu 2026: obraz z kamery jde vzduchem do notebooku, spoj funguje oběma směry a nejlepší naměřená latence sklo–sklo je 52 ms. Na řadě je test dosahu venku a změření výkonu a LBT v laboratoři. Na 2,4 GHz je v EU povoleno až 100 mW EIRP, ale jen s LBT; na 5,8 GHz 25 mW. Proto Vima používá ve městě 5,8 GHz a mimo zástavbu 2,4 GHz s LBT.

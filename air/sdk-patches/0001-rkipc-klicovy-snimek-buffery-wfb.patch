@@ -1,0 +1,105 @@
+Vima: rkipc - klicovy snimek na zadost, pocet ISP bufferu z ini, preskakovani rozhrani wfb*
+
+- rk_video_request_idr(): novy prikaz socket serveru, prijimac (prijem.py pres vima-ctl) si po ztrate
+  paketu vyzada klicovy snimek -> obnova obrazu ~100 ms misto ~490 ms
+- video.0:input_buffer_count v ini (puvodne natvrdo 2 buffery ISP; se 2 se zahazoval kazdy druhy snimek)
+- network.c: rozhrani wfb0 (monitor mod) a wfb-tun (IP tunel) nejsou site pro DHCP
+
+Licence: BSD-3-Clause jako rkipc (Copyright Rockchip Electronics Co., Ltd., viz project/app/rkipc/rkipc/LICENSE).
+Ve firmwaru: ano (obraz fw-krok4, 26. 10. 2026).
+
+diff --git a/project/app/rkipc/rkipc/common/network/network.c b/project/app/rkipc/rkipc/common/network/network.c
+index c11d71d..68becaa 100644
+--- a/project/app/rkipc/rkipc/common/network/network.c
++++ b/project/app/rkipc/rkipc/common/network/network.c
+@@ -702,6 +702,11 @@ int rk_network_get_cable_state() {
+ 			if (strcmp(name, "wlan0") == 0) {
+ 				continue;
+ 			}
++			// Vima: karta wfb-ng (wfb0, monitor mod) a IP tunel (wfb-tun) nejsou site pro DHCP;
++			// udhcpc by tunelu smazal adresu a posilal DHCP dotazy vzduchem
++			if (strncmp(name, "wfb", 3) == 0) {
++				continue;
++			}
+ 
+ 			LOG_INFO("\n[%s] link %s\n", name, (ifinfo->ifi_flags & IFF_LOWER_UP) ? "up" : "down");
+ 
+diff --git a/project/app/rkipc/rkipc/common/socket_server/server.c b/project/app/rkipc/rkipc/common/socket_server/server.c
+index 779ea6b..f9a9c68 100644
+--- a/project/app/rkipc/rkipc/common/socket_server/server.c
++++ b/project/app/rkipc/rkipc/common/socket_server/server.c
+@@ -1976,6 +1976,20 @@ int ser_rk_video_set_gop(int fd) {
+ 	return 0;
+ }
+ 
++// Vima: klicovy snimek na zadost (viz video.c)
++int ser_rk_video_request_idr(int fd) {
++	int err = 0;
++	int id;
++
++	if (sock_read(fd, &id, sizeof(id)) == SOCKERR_CLOSED)
++		return -1;
++	err = rk_video_request_idr(id);
++	if (sock_write(fd, &err, sizeof(int)) == SOCKERR_CLOSED)
++		return -1;
++
++	return 0;
++}
++
+ int ser_rk_video_get_max_rate(int fd) {
+ 	int err = 0;
+ 	int id;
+@@ -5564,6 +5578,7 @@ static const struct FunMap map[] = {
+     {(char *)"rk_video_restart", &ser_rk_video_restart},
+     {(char *)"rk_video_get_gop", &ser_rk_video_get_gop},
+     {(char *)"rk_video_set_gop", &ser_rk_video_set_gop},
++    {(char *)"rk_video_request_idr", &ser_rk_video_request_idr},
+     {(char *)"rk_video_get_max_rate", &ser_rk_video_get_max_rate},
+     {(char *)"rk_video_set_max_rate", &ser_rk_video_set_max_rate},
+     {(char *)"rk_video_get_RC_mode", &ser_rk_video_get_RC_mode},
+diff --git a/project/app/rkipc/rkipc/src/rv1106_ipc/video/video.c b/project/app/rkipc/rkipc/src/rv1106_ipc/video/video.c
+index eb8800c..c36dadb 100644
+--- a/project/app/rkipc/rkipc/src/rv1106_ipc/video/video.c
++++ b/project/app/rkipc/rkipc/src/rv1106_ipc/video/video.c
+@@ -717,7 +717,10 @@ int rkipc_pipe_0_init() {
+ 	int video_height = rk_param_get_int("video.0:height", -1);
+ 	int buffer_line = rk_param_get_int("video.source:buffer_line", video_height / 4);
+ 	int rotation = rk_param_get_int("video.source:rotation", 0);
+-	int buf_cnt = 2;
++	// Vima: pocet bufferu ISP pro hlavni stream (puvodne natvrdo 2). Pri 30 snimcich/s
++	// ISP zapisuje snimek ~32 ms a jeden buffer drzi VI (u32Depth = 1), se 2 buffery
++	// se pak zahazuje kazdy druhy snimek.
++	int buf_cnt = rk_param_get_int("video.0:input_buffer_count", 2);
+ 	int frame_min_i_qp = rk_param_get_int("video.0:frame_min_i_qp", 26);
+ 	int frame_min_qp = rk_param_get_int("video.0:frame_min_qp", 28);
+ 	int frame_max_i_qp = rk_param_get_int("video.0:frame_max_i_qp", 51);
+@@ -2189,6 +2192,17 @@ int rk_video_set_gop(int stream_id, int value) {
+ 	return 0;
+ }
+ 
++// Vima: klicovy snimek na zadost prijimace (po ztrate paketu se obraz obnovi hned,
++// ne az s dalsim pravidelnym I-snimkem). bInstant = RK_TRUE tento cip neumi.
++// (Postupne obnovovani - RK_MPI_VENC_SetIntraRefresh - vrati 0, ale MPP v tomto SDK
++// klic rc:refresh_en nezna, takze nic nedela.)
++int rk_video_request_idr(int stream_id) {
++	int ret = RK_MPI_VENC_RequestIDR(stream_id, RK_FALSE);
++	if (ret)
++		LOG_ERROR("RK_MPI_VENC_RequestIDR(%d) error %#x\n", stream_id, ret);
++	return ret;
++}
++
+ int rk_video_get_max_rate(int stream_id, int *value) {
+ 	char entry[128] = {'\0'};
+ 	snprintf(entry, 127, "video.%d:max_rate", stream_id);
+diff --git a/project/app/rkipc/rkipc/src/rv1106_ipc/video/video.h b/project/app/rkipc/rkipc/src/rv1106_ipc/video/video.h
+index 5a0bec4..e3ab9bb 100644
+--- a/project/app/rkipc/rkipc/src/rv1106_ipc/video/video.h
++++ b/project/app/rkipc/rkipc/src/rv1106_ipc/video/video.h
+@@ -31,6 +31,7 @@ int rk_video_deinit();
+ int rk_video_restart();
+ int rk_video_get_gop(int stream_id, int *value);
+ int rk_video_set_gop(int stream_id, int value);
++int rk_video_request_idr(int stream_id);
+ int rk_video_get_max_rate(int stream_id, int *value);
+ int rk_video_set_max_rate(int stream_id, int value);
+ int rk_video_get_RC_mode(int stream_id, const char **value);

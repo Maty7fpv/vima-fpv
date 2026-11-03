@@ -1,0 +1,380 @@
+Vima: ovladac SC3336 - rezim 1152x648 @ 60 fps (varianta D)
+
+Snimac cte radky ob jeden (svisle preskakovani, registry 0x3215 = 0x31, 0x3220 = 0x01), posila 2304x648
+pres MIPI 510 Mbit/s a sirku na 1152 zmensi ISP. VTS 680 = 60 fps. Parametr modulu bin60 (vychozi 1).
+Vyber varianty a mereni: docs/notes/sc3336-60fps-test-20261027.md.
+
+Licence: GPL-2.0 (Linux kernel). Ve firmwaru: NE. Na desce bezi stejna varianta prelozena mimo strom
+jadra jako /oem/usr/ko/sc3336.ko (air/sc3336-60fps).
+
+diff --git a/sysdrv/source/kernel/drivers/media/i2c/sc3336.c b/sysdrv/source/kernel/drivers/media/i2c/sc3336.c
+index bea465d..893ad26 100644
+--- a/sysdrv/source/kernel/drivers/media/i2c/sc3336.c
++++ b/sysdrv/source/kernel/drivers/media/i2c/sc3336.c
+@@ -5,6 +5,7 @@
+  * Copyright (C) 2020 Rockchip Electronics Co., Ltd.
+  *
+  * V0.0X01.0X01 first version
++ * V0.0X01.0X02 Vima: add 1152x648@60 2x2 binning mode (module param bin60)
+  */
+ 
+ //#define DEBUG
+@@ -28,7 +29,7 @@
+ #include <linux/pinctrl/consumer.h>
+ #include "../platform/rockchip/isp/rkisp_tb_helper.h"
+ 
+-#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x01)
++#define DRIVER_VERSION			KERNEL_VERSION(0, 0x01, 0x02)
+ 
+ #ifndef V4L2_CID_DIGITAL_GAIN
+ #define V4L2_CID_DIGITAL_GAIN		V4L2_CID_GAIN
+@@ -38,6 +39,42 @@
+ #define SC3336_BITS_PER_SAMPLE		10
+ #define SC3336_LINK_FREQ_253		253125000
+ #define SC3336_LINK_FREQ_255		255000000
++#define SC3336_LINK_FREQ_127		127500000
++
++/*
++ * Vima: 1152x648@60 2x2 binning mode for lower latency.
++ * SC3336_BIN60_MIPI_510M 0: MIPI 255Mbps/lane as the vendor binning tables
++ *                           (half the bits of the 2304x1296@30 mode per line)
++ * SC3336_BIN60_MIPI_510M 1: keep MIPI 510Mbps/lane of the 30fps mode
++ */
++#ifndef SC3336_BIN60_MIPI_510M
++#define SC3336_BIN60_MIPI_510M		0
++#endif
++#ifndef SC3336_BIN60_DEFAULT
++#define SC3336_BIN60_DEFAULT		1
++#endif
++#define SC3336_MODE_BIN60		2
++/*
++ * Test variants of the 60fps mode (compile time):
++ * SC3336_V60_KIND 0: 2x2 binning 1152x648 (vendor bin table)
++ *                 1: vertical sub-sampling only, 2304x648 (30fps table, MIPI 510),
++ *                    ISP scales the width
++ *                 2: centre crop 1152x648 without binning (30fps table, MIPI 510)
++ * SC3336_V60_FIX:  extra {reg, val}, pairs written after the table
++ * SC3336_V60_HTS / SC3336_V60_VTS: hts_def / vts_def override
++ */
++/* Vima firmware: varianta D (svisle preskakovani radku, 2304x648, MIPI 510), viz sc3336-60fps */
++#define SC3336_V60_KIND			1
++#define SC3336_V60_FIX			{0x3220, 0x01},
++#ifndef SC3336_V60_KIND
++#define SC3336_V60_KIND			0
++#endif
++#ifndef SC3336_V60_FIX
++#define SC3336_V60_FIX
++#endif
++#ifndef SC3336_V60_VTS
++#define SC3336_V60_VTS			0x02a8
++#endif
+ 
+ #define PIXEL_RATE_WITH_253M_10BIT	(SC3336_LINK_FREQ_253 * 2 * \
+ 					SC3336_LANES / SC3336_BITS_PER_SAMPLE)
+@@ -460,6 +497,218 @@ static const struct regval sc3336_linear_10_2304x1296_30fps_regs[] = {
+ 	{REG_NULL, 0x00},
+ };
+ 
++/*
++ * Xclk 24Mhz
++ * max_framerate 60fps
++ * mipi_datarate per lane 255Mbps (or 510Mbps, SC3336_BIN60_MIPI_510M), 2lane
++ * 2x2 binning of the full 2312x1304 window, output 1152x648
++ * Vendor binning table g_sc3336_640x480_75fps_reg_table (hpmcu driver,
++ * drv_sc3336.c: same PLL and line time 24.51us as the 30fps table) with
++ * window/output/VTS/exposure changed for 1152x648 (geometry as SC3336P).
++ */
++static const struct regval sc3336_linear_10_1152x648_60fps_regs[] = {
++	{0x0103, 0x01},
++	{0x36e9, 0x80},
++	{0x37f9, 0x80},
++	{0x301f, 0x67},
++	{0x30b8, 0x44},
++	{0x3200, 0x00},	/* x_start = 0 */
++	{0x3201, 0x00},
++	{0x3202, 0x00},	/* y_start = 0 */
++	{0x3203, 0x00},
++	{0x3204, 0x09},	/* x_end = 2311 */
++	{0x3205, 0x07},
++	{0x3206, 0x05},	/* y_end = 1303: full 2312x1304 window */
++	{0x3207, 0x17},
++	{0x3208, 0x04},	/* output width 1152 */
++	{0x3209, 0x80},
++	{0x320a, 0x02},	/* output height 648 */
++	{0x320b, 0x88},
++	{0x320e, 0x02},	/* VTS 680 = 60.0 fps */
++	{0x320f, 0xa8},
++	{0x3210, 0x00},	/* x offset 2 (binned px) */
++	{0x3211, 0x02},
++	{0x3212, 0x00},	/* y offset 2 (binned rows) */
++	{0x3213, 0x02},
++	{0x3215, 0x31},	/* 2x2 bin: vertical (vendor bin tables) */
++	{0x3220, 0x01},
++	{0x3253, 0x10},
++	{0x325f, 0x20},
++	{0x3301, 0x04},
++	{0x3306, 0x50},
++	{0x3309, 0xa8},
++	{0x330a, 0x00},
++	{0x330b, 0xd8},
++	{0x3314, 0x13},
++	{0x331f, 0x99},
++	{0x3333, 0x10},
++	{0x3334, 0x40},
++	{0x335e, 0x06},
++	{0x335f, 0x0a},
++	{0x3364, 0x5e},
++	{0x337c, 0x02},
++	{0x337d, 0x0e},
++	{0x3390, 0x01},
++	{0x3391, 0x03},
++	{0x3392, 0x07},
++	{0x3393, 0x04},
++	{0x3394, 0x04},
++	{0x3395, 0x04},
++	{0x3396, 0x08},
++	{0x3397, 0x0b},
++	{0x3398, 0x1f},
++	{0x3399, 0x04},
++	{0x339a, 0x0a},
++	{0x339b, 0x3a},
++	{0x339c, 0xb4},
++	{0x33a2, 0x04},
++	{0x33ac, 0x08},
++	{0x33ad, 0x1c},
++	{0x33ae, 0x10},
++	{0x33af, 0x30},
++	{0x33b1, 0x80},
++	{0x33b3, 0x48},
++	{0x33f9, 0x60},
++	{0x33fb, 0x74},
++	{0x33fc, 0x4b},
++	{0x33fd, 0x5f},
++	{0x349f, 0x03},
++	{0x34a6, 0x4b},
++	{0x34a7, 0x5f},
++	{0x34a8, 0x20},
++	{0x34a9, 0x18},
++	{0x34ab, 0xe8},
++	{0x34ac, 0x01},
++	{0x34ad, 0x00},
++	{0x34f8, 0x5f},
++	{0x34f9, 0x18},
++	{0x3630, 0xc0},
++	{0x3631, 0x84},
++	{0x3632, 0x64},
++	{0x3633, 0x32},
++	{0x363b, 0x03},
++	{0x363c, 0x08},
++	{0x3641, 0x38},
++	{0x3670, 0x4e},
++	{0x3674, 0xc0},
++	{0x3675, 0xc0},
++	{0x3676, 0xc0},
++	{0x3677, 0x84},
++	{0x3678, 0x84},
++	{0x3679, 0x84},
++	{0x367c, 0x48},
++	{0x367d, 0x49},
++	{0x367e, 0x4b},
++	{0x367f, 0x5f},
++	{0x3690, 0x32},
++	{0x3691, 0x32},
++	{0x3692, 0x42},
++	{0x369c, 0x4b},
++	{0x369d, 0x5f},
++	{0x36b0, 0x87},
++	{0x36b1, 0x90},
++	{0x36b2, 0xa1},
++	{0x36b3, 0xd8},
++	{0x36b4, 0x49},
++	{0x36b5, 0x4b},
++	{0x36b6, 0x4f},
++	{0x36ea, 0x11},
++	{0x36eb, 0x0d},
++#if SC3336_BIN60_MIPI_510M
++	{0x36ec, 0x1c},
++#else
++	{0x36ec, 0x2c},
++#endif
++	{0x36ed, 0x26},
++	{0x370f, 0x01},
++	{0x3722, 0x09},
++	{0x3724, 0x41},
++	{0x3725, 0xc1},
++	{0x3771, 0x09},
++	{0x3772, 0x09},
++	{0x3773, 0x05},
++	{0x377a, 0x48},
++	{0x377b, 0x5f},
++	{0x37fa, 0x11},
++	{0x37fb, 0x33},
++	{0x37fc, 0x11},
++	{0x37fd, 0x08},
++	{0x3904, 0x04},
++	{0x3905, 0x8c},
++	{0x391d, 0x04},
++	{0x3921, 0x20},
++	{0x3926, 0x21},
++	{0x3933, 0x80},
++	{0x3934, 0x0a},
++	{0x3935, 0x00},
++	{0x3936, 0x2a},
++	{0x3937, 0x6a},
++	{0x3938, 0x6a},
++	{0x39dc, 0x02},
++	{0x3e01, 0x2a},	/* exposure VTS - 8 */
++	{0x3e02, 0x00},
++	{0x3e09, 0x00},
++	{0x440e, 0x02},
++	{0x4509, 0x20},
++#if !SC3336_BIN60_MIPI_510M
++	{0x4819, 0x04},	/* MIPI timing for 255Mbps */
++	{0x481b, 0x02},
++	{0x481d, 0x07},
++	{0x481f, 0x02},
++	{0x4821, 0x07},
++	{0x4823, 0x02},
++	{0x4825, 0x02},
++	{0x4827, 0x02},
++	{0x4829, 0x03},
++#endif
++	{0x5000, 0x46},	/* 2x2 bin: digital part (vendor bin tables) */
++	{0x5900, 0x01},
++	{0x5901, 0x04},
++	{0x5988, 0x70},
++	{0x5ae0, 0xfe},
++	{0x5ae1, 0x40},
++	{0x5ae2, 0x38},
++	{0x5ae3, 0x30},
++	{0x5ae4, 0x28},
++	{0x5ae5, 0x38},
++	{0x5ae6, 0x30},
++	{0x5ae7, 0x28},
++	{0x5ae8, 0x3f},
++	{0x5ae9, 0x34},
++	{0x5aea, 0x2c},
++	{0x5aeb, 0x3f},
++	{0x5aec, 0x34},
++	{0x5aed, 0x2c},
++	{0x36e9, 0x54},
++	{0x37f9, 0x47},
++	{REG_NULL, 0x00},
++};
++
++static const struct regval sc3336_v60_fix_regs[] = {
++#if SC3336_V60_KIND == 1
++	{0x3208, 0x09},	/* output 2304x648 */
++	{0x3209, 0x00},
++	{0x320a, 0x02},
++	{0x320b, 0x88},
++	{0x3210, 0x00},	/* x offset 4 as 30fps, y offset 2 (sub-sampled rows) */
++	{0x3211, 0x04},
++	{0x3212, 0x00},
++	{0x3213, 0x02},
++	{0x3215, 0x31},	/* vertical sub-sampling as vendor bin tables */
++#elif SC3336_V60_KIND == 2
++	{0x3208, 0x04},	/* output 1152x648, centre of 2304x1296 */
++	{0x3209, 0x80},
++	{0x320a, 0x02},
++	{0x320b, 0x88},
++	{0x3210, 0x02},	/* x offset 4 + 576 */
++	{0x3211, 0x44},
++	{0x3212, 0x01},	/* y offset 4 + 324 */
++	{0x3213, 0x48},
++#endif
++	SC3336_V60_FIX
++	{REG_NULL, 0x00},
++};
++
+ static const struct sc3336_mode supported_modes[] = {
+ 	{
+ 		.width = 2304,
+@@ -494,14 +743,56 @@ static const struct sc3336_mode supported_modes[] = {
+ 		.xvclk_freq = 27000000,
+ 		.link_freq_idx = 0,
+ 		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
++	},
++	{
++		/* SC3336_MODE_BIN60 */
++#if SC3336_V60_KIND == 1
++		.width = 2304,
++#else
++		.width = 1152,
++#endif
++		.height = 648,
++		.max_fps = {
++			.numerator = 10000,
++			.denominator = 600000,
++		},
++		.exp_def = 0x0080,
++		/* hts * vts * fps == pixel rate, line time 24.51us */
++#if defined(SC3336_V60_HTS)
++		.hts_def = SC3336_V60_HTS,
++#elif SC3336_BIN60_MIPI_510M || SC3336_V60_KIND
++		.hts_def = 2500,
++#else
++		.hts_def = 1250,
++#endif
++		.vts_def = SC3336_V60_VTS,
++		.bus_fmt = MEDIA_BUS_FMT_SBGGR10_1X10,
++#if SC3336_V60_KIND
++		.reg_list = sc3336_linear_10_2304x1296_30fps_regs,
++#else
++		.reg_list = sc3336_linear_10_1152x648_60fps_regs,
++#endif
++		.hdr_mode = NO_HDR,
++		.xvclk_freq = 24000000,
++#if SC3336_BIN60_MIPI_510M || SC3336_V60_KIND
++		.link_freq_idx = 1,
++#else
++		.link_freq_idx = 2,
++#endif
++		.vc[PAD0] = V4L2_MBUS_CSI2_CHANNEL_0,
+ 	}
+ };
+ 
+ static const s64 link_freq_menu_items[] = {
+ 	SC3336_LINK_FREQ_253,
+ 	SC3336_LINK_FREQ_255,
++	SC3336_LINK_FREQ_127,
+ };
+ 
++static bool bin60 = SC3336_BIN60_DEFAULT;
++module_param(bin60, bool, 0444);
++MODULE_PARM_DESC(bin60, "start in 1152x648@60 2x2 binning mode (default 1)");
++
+ static const char * const sc3336_test_pattern_menu[] = {
+ 	"Disabled",
+ 	"Vertical Color Bar Type 1",
+@@ -1012,6 +1303,8 @@ static int __sc3336_start_stream(struct sc3336 *sc3336)
+ 
+ 	if (!sc3336->is_thunderboot) {
+ 		ret = sc3336_write_array(sc3336->client, sc3336->cur_mode->reg_list);
++		if (!ret && sc3336->cur_mode == &supported_modes[SC3336_MODE_BIN60])
++			ret = sc3336_write_array(sc3336->client, sc3336_v60_fix_regs);
+ 		if (ret)
+ 			return ret;
+ 		/* In case these controls are set before streaming */
+@@ -1242,7 +1535,7 @@ static int sc3336_open(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
+ 	struct sc3336 *sc3336 = to_sc3336(sd);
+ 	struct v4l2_mbus_framefmt *try_fmt =
+ 				v4l2_subdev_get_try_format(sd, fh->pad, 0);
+-	const struct sc3336_mode *def_mode = &supported_modes[0];
++	const struct sc3336_mode *def_mode = sc3336->cur_mode;
+ 
+ 	mutex_lock(&sc3336->mutex);
+ 	/* Initialize try_fmt */
+@@ -1574,6 +1867,12 @@ static int sc3336_probe(struct i2c_client *client,
+ 	}
+ 	if (i == ARRAY_SIZE(supported_modes))
+ 		sc3336->cur_mode = &supported_modes[0];
++	if (bin60)
++		sc3336->cur_mode = &supported_modes[SC3336_MODE_BIN60];
++	dev_info(dev, "start mode %ux%u@%u\n", sc3336->cur_mode->width,
++		 sc3336->cur_mode->height,
++		 sc3336->cur_mode->max_fps.denominator /
++		 sc3336->cur_mode->max_fps.numerator);
+ 
+ 	sc3336->xvclk = devm_clk_get(dev, "xvclk");
+ 	if (IS_ERR(sc3336->xvclk)) {

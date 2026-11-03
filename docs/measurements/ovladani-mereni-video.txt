@@ -1,0 +1,20 @@
+== tok 1024
+Datovy tok 2048 -> 1024 kbit/s; nejdelsi mezera obrazu na laptopu 100 ms, enkoder: nejdelsi mezera 66 ms
+== tok 2048
+Datovy tok 1024 -> 2048 kbit/s; nejdelsi mezera obrazu na laptopu 104 ms, enkoder: nejdelsi mezera 75 ms
+== fps 20
+Snimky 30 -> 20 fps (GOP 20); nejdelsi mezera obrazu na laptopu 129 ms, enkoder: nejdelsi mezera 114 ms
+== fps 30
+Snimky 20 -> 30 fps (GOP 30); nejdelsi mezera obrazu na laptopu 100 ms, enkoder: nejdelsi mezera 77 ms
+== vykon stredni
+Vykon desky index 50 -> 38 (max 50, 37 ms); nejdelsi mezera obrazu na laptopu 93 ms
+== vykon plny
+Vykon desky index 38 -> 50 (max 50, 39 ms); nejdelsi mezera obrazu na laptopu 91 ms
+== rozliseni 960x540
+Rozliseni 1280x720 -> 960x540 (volani 15 ms); nejdelsi mezera obrazu na laptopu 139 ms, enkoder: nejdelsi mezera 108 ms
+== rozliseni 1280x720
+Rozliseni 960x540 -> 1280x720 (volani 25 ms); nejdelsi mezera obrazu na laptopu 164 ms, enkoder: nejdelsi mezera 142 ms
+== rozliseni 1920x1080
+Rozliseni 1280x720 -> 1920x1080 (volani 21 ms); nejdelsi mezera obrazu na laptopu 205 ms, enkoder: nejdelsi mezera 147 ms
+== rozliseni 1280x720
+Rozliseni 1920x1080 -> 1280x720 (volani 32 ms); nejdelsi mezera obrazu na laptopu 145 ms, enkoder: nejdelsi mezera 152 ms

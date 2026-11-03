@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<title>Vima stopky</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #fff; overflow: hidden;
+    font-family: "DejaVu Sans Mono", "Liberation Mono", monospace; }
+  #wrap { display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100%; gap: 4vh; }
+  #flash { width: 46vh; height: 46vh; background: #000; border: 1.2vh solid #888; }
+  #time { font-size: 15vh; font-weight: bold; color: #9a9a9a; letter-spacing: 0.02em; line-height: 1; }
+  #info { font-size: 2vh; color: #888; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="flash"></div>
+  <div id="time">00.000</div>
+  <div id="info">Vima: stopky pro měření latence (sekundy.milisekundy). Kamera desky míří sem.</div>
+</div>
+<script>
+// Stopky = systemovy cas laptopu (stejne hodiny pouziva latence.py).
+// Ctverec se prepina v nahodnych intervalech 600-1000 ms; cas kazdeho prepnuti
+// se posila na server latence.py, ktery ho porovna s casem, kdy zmenu uvidi v prijatem videu.
+const timeEl = document.getElementById('time');
+const flashEl = document.getElementById('flash');
+let state = 0;
+let nextFlip = performance.now() + 1000;
+const now = () => performance.timeOrigin + performance.now();
+function fmt(ms) {
+  const s = Math.floor(ms / 1000) % 100;
+  const m = Math.floor(ms) % 1000;
+  return String(s).padStart(2, '0') + '.' + String(m).padStart(3, '0');
+}
+function frame() {
+  const t = now();
+  timeEl.textContent = fmt(t);
+  if (performance.now() >= nextFlip) {
+    state = 1 - state;
+    flashEl.style.background = state ? '#fff' : '#000';
+    fetch('/flip', { method: 'POST', body: JSON.stringify({ t: t, s: state }) }).catch(() => {});
+    nextFlip = performance.now() + 600 + Math.random() * 400;
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

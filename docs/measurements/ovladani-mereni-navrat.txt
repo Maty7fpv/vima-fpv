@@ -1,0 +1,4 @@
+test 1: deska pripravena {'tok': 'test1', 'phase': 'prepared', 'in_ms': 1000}
+test 1: po 9 s deska na kanalu 13, prepinani None, vykon 50; vypadek obrazu 4272 ms
+test 2: {'ch': 6, 'idx': 38, 'ms': 344}
+test 2: po 5 s laptop {'ch': 13, 'idx': 38, 'pojistka': False} deska 13 vypadek obrazu 3405 ms

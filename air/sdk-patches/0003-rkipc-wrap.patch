@@ -1,0 +1,257 @@
+Vima: rkipc - wrap (ISP -> VENC po radcich), mereni zpozdeni na desce, log
+
+Wrap: ISP pise hlavni proud do kruhoveho bufferu po radcich a kodér koduje uz behem zapisu
+(prevzato z rkipc pro RV1103). Zpozdeni na desce 22,5 ms -> 18,5 ms. Wrap se zapne jen pri
+video.source:enable_wrap = 1 a fps snimace <= video.source:wrap_max_fps, a jen pri startu rkipc
+(prepinani za behu vedlo k chybam cteni flash a bylo zruseno). Kodér ve wrapu potrebuje mezi snimky
+pauzu snimace, proto 55 fps misto 60.
+Mereni: /tmp/vima-venc-lat.txt (cas vydani snimku - PTS z VI), log /tmp/vima-rkipc.log.
+
+Licence: BSD-3-Clause jako rkipc. Ve firmwaru: NE, zatim jen rkipc v /oem na desce (air/rkipc-wrap).
+
+diff --git a/project/app/rkipc/rkipc/src/rv1106_ipc/video/video.c b/project/app/rkipc/rkipc/src/rv1106_ipc/video/video.c
+index c36dadb..c0c214e 100644
+--- a/project/app/rkipc/rkipc/src/rv1106_ipc/video/video.c
++++ b/project/app/rkipc/rkipc/src/rv1106_ipc/video/video.c
+@@ -3,6 +3,10 @@
+ // found in the LICENSE file.
+ 
+ #include "video.h"
++#include <limits.h>
++#include <stdarg.h>
++#include <sys/stat.h>
++#include <time.h>
+ #include "audio.h"
+ #include "rockiva.h"
+ 
+@@ -46,6 +50,43 @@ static int send_jpeg_cnt = 0;
+ static int get_jpeg_cnt = 0;
+ static int enable_ivs, enable_jpeg, enable_venc_0, enable_venc_1, enable_rtsp, enable_rtmp;
+ static int g_enable_vo, g_vo_dev_id, g_vi_chn_id, enable_npu, enable_osd;
++// Vima: wrap = ISP pise hlavni proud do kruhoveho bufferu po radcich a VENC koduje uz behem
++// zapisu (prevzato z rv1103_ipc). Nejde s rotaci VENC 0 ani se snimkem JPEG z VI kanalu 0.
++// enable_wrap = wrap prave aktivni (rozhodne rk_video_init podle vima_wrap_wanted).
++static int enable_wrap;
++
++// Vima: log do /tmp/vima-rkipc.log (max ~64 kB), cas = CLOCK_MONOTONIC jako u /tmp/vima-venc-lat.txt
++static void vima_log(const char *fmt, ...) {
++	struct timespec ts;
++	va_list ap;
++	struct stat st;
++	// velikost pred otevrenim: ftell hned po fopen("a") vraci na uClibc 0
++	FILE *f = fopen("/tmp/vima-rkipc.log",
++	                stat("/tmp/vima-rkipc.log", &st) == 0 && st.st_size > 65536 ? "w" : "a");
++	if (!f)
++		return;
++	clock_gettime(CLOCK_MONOTONIC, &ts);
++	fprintf(f, "%ld.%03ld ", (long)ts.tv_sec, ts.tv_nsec / 1000000);
++	va_start(ap, fmt);
++	vfprintf(f, fmt, ap);
++	va_end(ap);
++	fputc('\n', f);
++	fclose(f);
++}
++
++// Vima: kodér ve wrapu potrebuje mezi snimky pauzu snimace (~1-1,5 ms), jinak vynecha kazdy druhy
++// snimek (1152x648: 60 a 58 fps -> 30/29, 55 fps OK; 2304x1296@30 -> 15). Wrap tedy jen pri
++// video.source:enable_wrap = 1 a fps snimace <= video.source:wrap_max_fps (chybi = 0 = nikdy).
++static int vima_wrap_wanted(void) {
++	int fps = rk_param_get_int("isp.0.adjustment:fps", 30);
++	int max = rk_param_get_int("video.source:wrap_max_fps", 0);
++	return rk_param_get_int("video.source:enable_wrap", 0) && fps > 0 && fps <= max;
++}
++
++// Wrap se rozhoduje JEN pri prvnim startu videa (27. 10. / 3. 11.: prepnuti wrapu za behu pres
++// rk_video_restart nechalo kodér bez snimku a desku s chybami cteni flash - nutny restart napajeni).
++// Pozdejsi rk_video_restart necha stav ze startu; zmenu wrapu dela vima-ctl restartem desky.
++static int vima_wrap_boot = -1;
+ static int g_video_run_ = 1;
+ static int g_nn_osd_run_ = 0;
+ static int pipe_id_ = 0;
+@@ -114,6 +155,37 @@ static void *get_vi_send_vo(void *arg) {
+ }
+ #endif
+ 
++// Vima: zpozdeni na desce = cas vydani zakodovaneho snimku - PTS snimku z VI (CLOCK_MONOTONIC, us).
++// Kazdych 600 snimku (10 s pri 60 fps) prida radek do /tmp/vima-venc-lat.txt (max ~64 kB).
++static void vima_venc_lat(uint64_t pts) {
++	static int n;
++	static long long sum, mn, mx;
++	struct timespec ts;
++	clock_gettime(CLOCK_MONOTONIC, &ts);
++	long long d = (long long)ts.tv_sec * 1000000 + ts.tv_nsec / 1000 - (long long)pts;
++	if (!n) {
++		sum = 0;
++		mn = LLONG_MAX;
++		mx = LLONG_MIN;
++	}
++	sum += d;
++	if (d < mn)
++		mn = d;
++	if (d > mx)
++		mx = d;
++	if (++n < 600)
++		return;
++	struct stat st;
++	FILE *f = fopen("/tmp/vima-venc-lat.txt",
++	                stat("/tmp/vima-venc-lat.txt", &st) == 0 && st.st_size > 65536 ? "w" : "a");
++	if (f) {
++		fprintf(f, "%ld wrap=%d n=%d avg=%lld min=%lld max=%lld us\n", (long)ts.tv_sec, enable_wrap, n,
++		        sum / n, mn, mx);
++		fclose(f);
++	}
++	n = 0;
++}
++
+ static void *rkipc_get_venc_0(void *arg) {
+ 	LOG_DEBUG("#Start %s thread, arg:%p\n", __func__, arg);
+ 	prctl(PR_SET_NAME, "RkipcVenc0", 0, 0, 0);
+@@ -128,6 +200,7 @@ static void *rkipc_get_venc_0(void *arg) {
+ 		// 5.get the frame
+ 		ret = RK_MPI_VENC_GetStream(VIDEO_PIPE_0, &stFrame, 2500);
+ 		if (ret == RK_SUCCESS) {
++			vima_venc_lat(stFrame.pstPack->u64PTS);
+ 			void *data = RK_MPI_MB_Handle2VirAddr(stFrame.pstPack->pMbBlk);
+ 			// fwrite(data, 1, stFrame.pstPack->u32Len, fp);
+ 			// fflush(fp);
+@@ -231,6 +304,11 @@ static void *rkipc_get_vi_send_jpeg(void *arg) {
+ 		pstSrcRect.u32Height = rk_param_get_int("video.0:height", -1);
+ 		jpeg_width = rk_param_get_int("video.jpeg:width", 1920);
+ 		jpeg_height = rk_param_get_int("video.jpeg:height", 1080);
++		if (enable_wrap) {
++			LOG_WARN("enable wrap, jpeg snapshot from vi chn 0 not possible\n");
++			send_jpeg_cnt--;
++			continue;
++		}
+ 		ret = RK_MPI_VI_GetChnFrame(pipe_id_, VIDEO_PIPE_0, &stViFrame, 1000);
+ 		if (ret == RK_SUCCESS) {
+ 			// tde begin job
+@@ -715,7 +793,9 @@ int rkipc_pipe_0_init() {
+ 	int ret;
+ 	int video_width = rk_param_get_int("video.0:width", -1);
+ 	int video_height = rk_param_get_int("video.0:height", -1);
+-	int buffer_line = rk_param_get_int("video.source:buffer_line", video_height / 4);
++	int video_max_width = rk_param_get_int("video.0:max_width", 2560);
++	int video_max_height = rk_param_get_int("video.0:max_height", 1440);
++	int buffer_line = rk_param_get_int("video.source:buffer_line", video_max_height / 4);
+ 	int rotation = rk_param_get_int("video.source:rotation", 0);
+ 	// Vima: pocet bufferu ISP pro hlavni stream (puvodne natvrdo 2). Pri 30 snimcich/s
+ 	// ISP zapisuje snimek ~32 ms a jeden buffer drzi VI (u32Depth = 1), se 2 buffery
+@@ -737,7 +817,7 @@ int rkipc_pipe_0_init() {
+ 	vi_chn_attr.stSize.u32Width = video_width;
+ 	vi_chn_attr.stSize.u32Height = video_height;
+ 	vi_chn_attr.enPixelFormat = RK_FMT_YUV420SP;
+-	vi_chn_attr.u32Depth = 1;
++	vi_chn_attr.u32Depth = enable_wrap ? 0 : 1; // z kruhoveho bufferu si snimek vzit nejde
+ 	vi_chn_attr.enCompressMode = COMPRESS_MODE_NONE;
+ 	ret = RK_MPI_VI_SetChnAttr(pipe_id_, VIDEO_PIPE_0, &vi_chn_attr);
+ 	if (ret) {
+@@ -745,6 +825,23 @@ int rkipc_pipe_0_init() {
+ 		return ret;
+ 	}
+ 
++	VI_CHN_BUF_WRAP_S stViWrap;
++	memset(&stViWrap, 0, sizeof(VI_CHN_BUF_WRAP_S));
++	if (enable_wrap) {
++		if (buffer_line < 128 || buffer_line > video_max_height) {
++			LOG_ERROR("wrap mode buffer line must between [128, H], set as video_max_height\n");
++			buffer_line = video_max_height;
++		}
++		stViWrap.bEnable = RK_TRUE;
++		stViWrap.u32BufLine = buffer_line;
++		stViWrap.u32WrapBufferSize = stViWrap.u32BufLine * video_max_width * 3 / 2;
++		LOG_INFO("set vi channel wrap line: %d, wrapBuffSize = %d\n", stViWrap.u32BufLine,
++		         stViWrap.u32WrapBufferSize);
++		ret = RK_MPI_VI_SetChnWrapBufAttr(pipe_id_, VIDEO_PIPE_0, &stViWrap);
++		if (ret)
++			LOG_ERROR("RK_MPI_VI_SetChnWrapBufAttr error! ret=%#x\n", ret);
++	}
++
+ 	ret = RK_MPI_VI_EnableChn(pipe_id_, VIDEO_PIPE_0);
+ 	if (ret) {
+ 		LOG_ERROR("ERROR: create VI error! ret=%d\n", ret);
+@@ -1011,6 +1108,16 @@ int rkipc_pipe_0_init() {
+ 	}
+ 	RK_MPI_VENC_SetRcParam(VIDEO_PIPE_0, &venc_rc_param);
+ 
++	if (enable_wrap) {
++		VENC_CHN_BUF_WRAP_S stVencChnBufWrap;
++		memset(&stVencChnBufWrap, 0, sizeof(stVencChnBufWrap));
++		stVencChnBufWrap.bEnable = RK_TRUE;
++		stVencChnBufWrap.u32BufLine = buffer_line; // stejne jako VI
++		ret = RK_MPI_VENC_SetChnBufWrapAttr(VIDEO_PIPE_0, &stVencChnBufWrap);
++		if (ret)
++			LOG_ERROR("RK_MPI_VENC_SetChnBufWrapAttr error! ret=%#x\n", ret);
++	}
++
+ 	if (!strcmp(tmp_output_data_type, "H.264")) {
+ 		VENC_H264_TRANS_S pstH264Trans;
+ 		RK_MPI_VENC_GetH264Trans(VIDEO_PIPE_0, &pstH264Trans);
+@@ -1046,7 +1153,10 @@ int rkipc_pipe_0_init() {
+ 	memset(&stVencChnRefBufShare, 0, sizeof(VENC_CHN_REF_BUF_SHARE_S));
+ 	stVencChnRefBufShare.bEnable = rk_param_get_int("video.0:enable_refer_buffer_share", 0);
+ 	RK_MPI_VENC_SetChnRefBufShareAttr(VIDEO_PIPE_0, &stVencChnRefBufShare);
+-	if (rotation == 0) {
++	if (enable_wrap) {
++		if (rotation)
++			LOG_WARN("enable wrap, venc-0 can't rotate\n");
++	} else if (rotation == 0) {
+ 		RK_MPI_VENC_SetChnRotation(VIDEO_PIPE_0, ROTATION_0);
+ 	} else if (rotation == 90) {
+ 		RK_MPI_VENC_SetChnRotation(VIDEO_PIPE_0, ROTATION_90);
+@@ -2474,6 +2584,7 @@ int rk_video_set_resolution(int stream_id, const char *value) {
+ 
+ 	sscanf(value, "%d*%d", &width, &height);
+ 	LOG_INFO("value is %s, width is %d, height is %d\n", value, width, height);
++	vima_log("set_resolution stream %d: %dx%d (wrap %d)", stream_id, width, height, enable_wrap);
+ 
+ 	// unbind
+ 	vi_chn.enModId = RK_ID_VI;
+@@ -2549,6 +2660,8 @@ int rk_video_set_frame_rate(int stream_id, const char *value) {
+ 	}
+ 	LOG_INFO("num is %d, den is %d\n", num, den);
+ 	sensor_fps = rk_param_get_int("isp.0.adjustment:fps", 30);
++	vima_log("set_frame_rate stream %d: %d/%d (snimac %d, wrap %d)", stream_id, num, den, sensor_fps,
++	         enable_wrap);
+ 
+ 	RK_MPI_VI_GetChnAttr(pipe_id_, stream_id, &vi_chn_attr);
+ 	LOG_INFO("old VI framerate is [%d:%d]\n", vi_chn_attr.stFrameRate.s32SrcFrameRate,
+@@ -2709,9 +2822,13 @@ int rk_video_set_rotation(int value) {
+ 	} else if (value == 270) {
+ 		rotation = ROTATION_270;
+ 	}
+-	ret = RK_MPI_VENC_SetChnRotation(VIDEO_PIPE_0, rotation);
+-	if (ret)
+-		LOG_ERROR("RK_MPI_VENC_SetChnRotation VIDEO_PIPE_0 error! ret=%#x\n", ret);
++	if (!enable_wrap) {
++		ret = RK_MPI_VENC_SetChnRotation(VIDEO_PIPE_0, rotation);
++		if (ret)
++			LOG_ERROR("RK_MPI_VENC_SetChnRotation VIDEO_PIPE_0 error! ret=%#x\n", ret);
++	} else {
++		LOG_WARN("enable wrap, venc-0 can't rotate\n");
++	}
+ 	ret = RK_MPI_VENC_SetChnRotation(VIDEO_PIPE_1, rotation);
+ 	if (ret)
+ 		LOG_ERROR("RK_MPI_VENC_SetChnRotation VIDEO_PIPE_1 error! ret=%#x\n", ret);
+@@ -3369,9 +3486,18 @@ int rk_video_init() {
+ 	g_vo_dev_id = rk_param_get_int("video.source:vo_dev_id", 3);
+ 	enable_npu = rk_param_get_int("video.source:enable_npu", 0);
+ 	enable_osd = rk_param_get_int("osd.common:enable_osd", 0);
+-	LOG_DEBUG("g_vi_chn_id is %d, g_enable_vo is %d, g_vo_dev_id is %d, enable_npu is %d, "
+-	          "enable_osd is %d\n",
+-	          g_vi_chn_id, g_enable_vo, g_vo_dev_id, enable_npu, enable_osd);
++	if (vima_wrap_boot < 0)
++		vima_wrap_boot = vima_wrap_wanted();
++	enable_wrap = vima_wrap_boot;
++	vima_log("video init: %dx%d, fps %d (snimac %d), wrap %d (enable_wrap %d, wrap_max_fps %d)",
++	         rk_param_get_int("video.0:width", -1), rk_param_get_int("video.0:height", -1),
++	         rk_param_get_int("video.0:dst_frame_rate_num", -1),
++	         rk_param_get_int("isp.0.adjustment:fps", -1), enable_wrap,
++	         rk_param_get_int("video.source:enable_wrap", 0),
++	         rk_param_get_int("video.source:wrap_max_fps", 0));
++	LOG_INFO("g_vi_chn_id is %d, g_enable_vo is %d, g_vo_dev_id is %d, enable_npu is %d, "
++	         "enable_osd is %d, enable_wrap is %d\n",
++	         g_vi_chn_id, g_enable_vo, g_vo_dev_id, enable_npu, enable_osd, enable_wrap);
+ 	g_video_run_ = 1;
+ 	ret |= rkipc_vi_dev_init();
+ 	if (enable_rtsp)

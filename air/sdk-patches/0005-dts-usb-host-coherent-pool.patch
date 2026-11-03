@@ -1,0 +1,30 @@
+Vima: device tree - USB-C natrvalo v host modu (Wi-Fi karta), coherent_pool=256K
+
+Licence: GPL-2.0 (Linux kernel). Ve firmwaru: ano (fw-krok4).
+
+diff --git a/sysdrv/source/kernel/arch/arm/boot/dts/rv1106-luckfox-pico-pro-max-ipc.dtsi b/sysdrv/source/kernel/arch/arm/boot/dts/rv1106-luckfox-pico-pro-max-ipc.dtsi
+index b2e0a9c..62c0f9e 100644
+--- a/sysdrv/source/kernel/arch/arm/boot/dts/rv1106-luckfox-pico-pro-max-ipc.dtsi
++++ b/sysdrv/source/kernel/arch/arm/boot/dts/rv1106-luckfox-pico-pro-max-ipc.dtsi
+@@ -6,7 +6,7 @@
+ 
+ / {
+ 	chosen {
+-		bootargs = "earlycon=uart8250,mmio32,0xff4c0000 console=ttyFIQ0 root=/dev/mmcblk1p7 rootwait snd_soc_core.prealloc_buffer_size_kbytes=16 coherent_pool=0";
++		bootargs = "earlycon=uart8250,mmio32,0xff4c0000 console=ttyFIQ0 root=/dev/mmcblk1p7 rootwait snd_soc_core.prealloc_buffer_size_kbytes=16 coherent_pool=256K";
+ 	};
+ 
+ 	acodec_sound: acodec-sound {
+diff --git a/sysdrv/source/kernel/arch/arm/boot/dts/rv1106g-luckfox-pico-pro-max.dts b/sysdrv/source/kernel/arch/arm/boot/dts/rv1106g-luckfox-pico-pro-max.dts
+index 7c8a3e5..87fb620 100644
+--- a/sysdrv/source/kernel/arch/arm/boot/dts/rv1106g-luckfox-pico-pro-max.dts
++++ b/sysdrv/source/kernel/arch/arm/boot/dts/rv1106g-luckfox-pico-pro-max.dts
+@@ -90,7 +90,7 @@
+ 
+ &usbdrd_dwc3 {
+ 	status = "okay";
+-	dr_mode = "peripheral";
++	dr_mode = "host";
+ };
+ 
+ /**********SPI**********/

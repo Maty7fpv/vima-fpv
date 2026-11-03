@@ -1,0 +1,20 @@
+== kanal 6 (21:47:56)
+Deska pripravena, prepnuti na kanal 6 za 1.5 s
+Laptop na kanalu 6 (345 ms), overuji spojeni vzduchem...
+Kanal 13 -> 6: deska 141 ms, laptop 345 ms; nejdelsi mezera obrazu na laptopu 100 ms
+rc=0
+== kanal 13 (21:48:00)
+Deska pripravena, prepnuti na kanal 13 za 1.5 s
+Laptop na kanalu 13 (344 ms), overuji spojeni vzduchem...
+Kanal 6 -> 13: deska 140 ms, laptop 344 ms; nejdelsi mezera obrazu na laptopu 96 ms
+rc=0
+== kanal 149 (21:48:04)
+Deska pripravena, prepnuti na kanal 149 za 1.5 s
+Laptop na kanalu 149 (345 ms), overuji spojeni vzduchem...
+Kanal 13 -> 149: deska 139 ms, laptop 345 ms; nejdelsi mezera obrazu na laptopu 133 ms
+rc=0
+== kanal 13 (21:48:08)
+Deska pripravena, prepnuti na kanal 13 za 1.5 s
+Laptop na kanalu 13 (344 ms), overuji spojeni vzduchem...
+Kanal 149 -> 13: deska 157 ms, laptop 344 ms; nejdelsi mezera obrazu na laptopu 106 ms
+rc=0

@@ -1,0 +1,4 @@
+Cekam 30 s na nova data v /home/mikes/vima-board/gs-video.log ...
+okno 30 s: prijato 13919 paketu, FEC opravil 263, nezachraneno 0 (v 0 s), vystup 178.2 paketu/s
+  2472 MHz anténa 0: RSSI prumer -55.0 dBm (min -60), SNR prumer 23.0 dB (min 2)
+  2472 MHz anténa 1: RSSI prumer -52.7 dBm (min -58), SNR prumer 24.5 dB (min -2)

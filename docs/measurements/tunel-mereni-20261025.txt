@@ -1,0 +1,44 @@
+# Vima krok 1 - mereni tunelu 25. 10. 2026
+## bez omezeni toku, uplink n=3 F=3000, vykon laptopu 38
+== 1) ping 200x po 0,2 s
+200 paketů odesláno, 197 přijato, 1.5% packet loss, time 39950ms
+rtt min/avg/max/mdev = 12.646/18.008/60.939/9.051 ms
+  deska uplink: ramcu 560, FEC opravil 21, ztraceno 2, paketu ven 200
+== A) video, tunel v klidu (30 s)
+okno 30 s: prijato 9810 paketu, FEC opravil 142, nezachraneno 0 (v 0 s), vystup 68.7 paketu/s
+  2472 MHz anténa 0: RSSI prumer -24.1 dBm (min -26), SNR prumer 29.0 dB (min -4)
+  2472 MHz anténa 1: RSSI prumer -37.1 dBm (min -40), SNR prumer 29.0 dB (min -4)
+  deska video wfb_tx: odvysilano 10031 ramcu, zahozeno 0, prum. latence vlozeni 68 us
+== B) video + ping 20/s (30 s)
+okno 30 s: prijato 9648 paketu, FEC opravil 177, nezachraneno 0 (v 0 s), vystup 68.5 paketu/s
+  2472 MHz anténa 0: RSSI prumer -24.5 dBm (min -26), SNR prumer 29.0 dB (min -4)
+  2472 MHz anténa 1: RSSI prumer -38.7 dBm (min -42), SNR prumer 29.0 dB (min -4)
+  deska video wfb_tx: odvysilano 10004 ramcu, zahozeno 0, prum. latence vlozeni 71 us
+640 paketů odesláno, 632 přijato, 1.25% packet loss, time 32371ms
+rtt min/avg/max/mdev = 11.917/16.465/60.087/6.734 ms, pipe 2
+  deska uplink: ramcu 1757, FEC opravil 49, ztraceno 5, paketu ven 631
+== C) video + opakovane scp 1 MB na desku vzduchem (30 s)
+okno 30 s: prijato 9467 paketu, FEC opravil 1044, nezachraneno 141 (v 10 s), vystup 93.4 paketu/s
+  2472 MHz anténa 0: RSSI prumer -26.8 dBm (min -38), SNR prumer 28.7 dB (min -4)
+  2472 MHz anténa 1: RSSI prumer -39.6 dBm (min -50), SNR prumer 28.3 dB (min -4)
+  deska video wfb_tx: odvysilano 12244 ramcu, zahozeno 0, prum. latence vlozeni 96 us
+prenos 1: 5.2 s
+prenos 2: 5.3 s
+prenos 3: 5.8 s
+prenos 4: 5.7 s
+prenos 5: 6.3 s
+prenos 6: 5.3 s
+  deska uplink: ramcu 10514, FEC opravil 868, ztraceno 122, paketu ven 4269
+== D) ping 200x po 0,2 s znovu
+200 paketů odesláno, 199 přijato, 0.5% packet loss, time 39937ms
+rtt min/avg/max/mdev = 12.573/15.680/32.075/2.700 ms
+HOTOVO
+## s omezenim 300 kbit/s
+stazeni 1 MB z desky: 25.6 s
+okno 30 s: prijato 10800 paketu, FEC opravil 275, nezachraneno 0 (v 0 s), vystup 79.6 paketu/s
+nahrani 1 MB na desku: 29.1 s
+qdisc tbf 8001: root refcnt 2 rate 300Kbit burst 8Kb lat 400ms 
+ Sent 1078010 bytes 850 pkt (dropped 0, overlimits 826 requeues 0) 
+ backlog 0b 0p requeues 0
+
+[exited with code 0]

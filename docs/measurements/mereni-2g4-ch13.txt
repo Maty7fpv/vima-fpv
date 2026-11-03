@@ -1,0 +1,12 @@
+Cekam 60 s na nova data v /home/mikes/vima-board/rx-test.log ...
+okno 60 s: prijato 28589 paketu, FEC opravil 555, nezachraneno 0 (v 0 s), vystup 244.1 paketu/s
+  2472 MHz anténa 0: RSSI prumer -53.9 dBm (min -62), SNR prumer 24.0 dB (min -1)
+  2472 MHz anténa 1: RSSI prumer -54.2 dBm (min -66), SNR prumer 24.0 dB (min -1)
+Cekam 60 s na nova data v /home/mikes/vima-board/rx-test.log ...
+okno 60 s: prijato 29001 paketu, FEC opravil 446, nezachraneno 0 (v 0 s), vystup 244.2 paketu/s
+  2472 MHz anténa 0: RSSI prumer -56.2 dBm (min -62), SNR prumer 22.5 dB (min -2)
+  2472 MHz anténa 1: RSSI prumer -53.2 dBm (min -56), SNR prumer 23.9 dB (min 1)
+Cekam 60 s na nova data v /home/mikes/vima-board/rx-test.log ...
+okno 60 s: prijato 29005 paketu, FEC opravil 441, nezachraneno 0 (v 0 s), vystup 244.1 paketu/s
+  2472 MHz anténa 0: RSSI prumer -55.3 dBm (min -60), SNR prumer 23.1 dB (min 0)
+  2472 MHz anténa 1: RSSI prumer -53.6 dBm (min -56), SNR prumer 23.7 dB (min -2)

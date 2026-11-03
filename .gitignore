@@ -53,3 +53,15 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Vima: never commit keys, firmware images, backups or local build output
+*.key
+authorized_keys
+*.img
+*.pred-*
+*.bak*
+backup-*/
+build/
+build-*/
+__pycache__/
+*.log

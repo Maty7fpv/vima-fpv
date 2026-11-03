@@ -1,0 +1,23 @@
+Vima: rkipc - power_line_frequency_mode = close vypne ochranu proti blikani
+
+Bez toho AE drzi expozici v nasobcich 10 ms (50 Hz) a strop expozice 4 ms z IQ se neuplatni.
+Pod zarivkami muzou byt v obraze pruhy.
+Licence: BSD-3-Clause jako rkipc. Ve firmwaru: NE, zatim jen rkipc v /oem na desce.
+
+diff --git a/project/app/rkipc/rkipc/common/isp/rv1106/isp.c b/project/app/rkipc/rkipc/common/isp/rv1106/isp.c
+index add0982..e3e770e 100644
+--- a/project/app/rkipc/rkipc/common/isp/rv1106/isp.c
++++ b/project/app/rkipc/rkipc/common/isp/rv1106/isp.c
+@@ -1496,7 +1496,11 @@ int rk_isp_set_power_line_frequency_mode(int cam_id, const char *value) {
+ 	Uapi_ExpSwAttrV2_t expSwAttr;
+ 
+ 	ret = rk_aiq_user_api2_ae_getExpSwAttr(rkipc_aiq_get_ctx(cam_id), &expSwAttr);
+-	if (!strcmp(value, "NTSC(60HZ)")) {
++	if (!strcmp(value, "close")) {
++		// Vima: bez ochrany proti blikani - jinak AE drzi expozici v nasobcich 10 ms (50 Hz) a strop
++		// expozice z IQ (TimeDot 4 ms, nizsi zpozdeni) se neuplatni. Pod zarivkami muzou byt pruhy.
++		expSwAttr.stAuto.stAntiFlicker.enable = false;
++	} else if (!strcmp(value, "NTSC(60HZ)")) {
+ 		expSwAttr.stAuto.stAntiFlicker.enable = true;
+ 		expSwAttr.stAuto.stAntiFlicker.Frequency = AECV2_FLICKER_FREQUENCY_60HZ;
+ 		expSwAttr.stAuto.stAntiFlicker.Mode = AECV2_ANTIFLICKER_NORMAL_MODE;
