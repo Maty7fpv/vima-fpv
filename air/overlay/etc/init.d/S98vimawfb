@@ -1,0 +1,48 @@
+#!/bin/sh
+#
+# Vima: vysilani wfb-ng z karty RTL8812AU (viz /etc/vima/vima.conf)
+#
+
+PIDFILE=/var/run/vima-wfb.pid
+CONF=/etc/vima/vima.conf
+
+eth_static() {
+	# Pevna adresa pro SSH z laptopu (udhcpc hook ji dopluje i po DHCP)
+	[ -n "$ETH_STATIC" ] || return 0
+	ip addr show dev eth0 2>/dev/null | grep -q "inet ${ETH_STATIC%/*}/" ||
+		ip addr add "$ETH_STATIC" dev eth0 2>/dev/null
+}
+
+start() {
+	[ -f "$CONF" ] && . "$CONF"
+	eth_static
+	if [ "$WFB_ENABLE" != "1" ]; then
+		echo "vima-wfb: vypnuto (WFB_ENABLE v $CONF)"
+		return 0
+	fi
+	# skript bezi jako /bin/sh, proto hledat podle jmena procesu (comm), ne -x
+	if start-stop-daemon -K -t -q -n vima-wfb; then
+		echo "vima-wfb: uz bezi"
+		return 0
+	fi
+	printf "Starting vima-wfb: "
+	start-stop-daemon -S -b -m -p "$PIDFILE" -x /usr/bin/vima-wfb
+	echo "OK"
+}
+
+stop() {
+	printf "Stopping vima-wfb: "
+	start-stop-daemon -K -q -n vima-wfb -s TERM
+	rm -f "$PIDFILE"
+	sleep 1
+	killall wfb_tx wfb_rx wfb_tun 2>/dev/null
+	killall vima-testgen.py vima-video.py vima-ctl.py 2>/dev/null
+	echo "OK"
+}
+
+case "$1" in
+	start) start ;;
+	stop) stop ;;
+	restart) stop; start ;;
+	*) echo "Usage: $0 {start|stop|restart}"; exit 1 ;;
+esac

@@ -1,6 +1,6 @@
 # Board state on 3 Nov 2026
 
-What runs on the air unit today but is not in the last firmware image (26 Oct 2026). Taken from a backup of the board. Use it to check a new firmware build: the IQ file and the ini must match exactly. rkipc and the kernel module only match if they are built the same way.
+What ran on the air unit on 3 Nov 2026 outside the firmware image of 26 Oct, taken from a backup of the board. The same evening it went into a new firmware (see the end of this file). Use it to check a firmware build: the IQ file and the ini must match exactly. rkipc and the kernel module only match if they are built the same way.
 
 | File on the board | md5 | Source in this repository |
 |---|---|---|
@@ -13,3 +13,14 @@ What runs on the air unit today but is not in the last firmware image (26 Oct 20
 `rkipc-300w.ini`: 1152×648 @ 55 fps, encoder wrap (`enable_wrap`, `buffer_line`, `wrap_max_fps` in `[video.source]`), anti-flicker off. It is the SDK ini from patch 0002 run through [`ini-60fps.awk`](../sc3336-60fps/rkipc/ini-60fps.awk) with `FPS=55`, plus the wrap keys written by [`nasad-wrap.sh zap`](../rkipc-wrap/nasad-wrap.sh) and `power_line_frequency_mode = close`.
 
 `vima-ctl` switches between the 30 and 60 fps camera modes by copying `sc3336-30.ko` or `sc3336-60.ko` to `/oem/usr/ko/sc3336.ko` and rebooting.
+
+## Firmware of 3 Nov 2026 (evening)
+
+Built from the Luckfox SDK with all patches from [`../sdk-patches`](../sdk-patches) and flashed to the board. The IQ file, the ini and `sc3336-30.ko` are identical to the table above. Rebuilt from the same sources:
+
+| File | md5 |
+|---|---|
+| `/oem/usr/bin/rkipc` | `cbd6effbc9b5de5373950f3e17bcc1c3` |
+| `/oem/usr/ko/sc3336.ko`, `/oem/usr/share/vima/sc3336-60.ko` | `7e482901dc478f46a239244d8963de85` |
+
+The overlay's default channel changed to 149 (5.8 GHz). Checked on the board: wrap on, 55 fps, 18.4–18.5 ms from frame start to encoded frame; over the air on channel 149 at MCS 4: 54.8 fps, longest gap 40 ms, no lost packets.

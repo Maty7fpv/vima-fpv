@@ -65,3 +65,7 @@ build/
 build-*/
 __pycache__/
 *.log
+
+# Vima: overlay directories named *.d are not compiler output (the C template's *.d rule above would hide them)
+!air/overlay/etc/init.d/
+!air/overlay/usr/share/udhcpc/default.script.d/

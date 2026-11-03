@@ -1,0 +1,17 @@
+#!/bin/sh
+#
+# Vima: mkfs.ubifs uklada soubory s uid 1000 a overlay s pravy 0644.
+# Pred startem sitovych sluzeb (dhcpcd, sshd) vratit vlastnika a prava:
+#  - /root a authorized_keys (jinak sshd se StrictModes odmitne klic)
+#  - tajny klic dronu a /etc/shadow
+#
+
+case "$1" in
+	start)
+		chown 0:0 /root /root/.ssh /root/.ssh/authorized_keys /etc/vima/drone.key /etc/shadow 2>/dev/null
+		chmod 700 /root /root/.ssh 2>/dev/null
+		chmod 600 /root/.ssh/authorized_keys /etc/vima/drone.key /etc/shadow 2>/dev/null
+		;;
+	stop|restart) ;;
+	*) echo "Usage: $0 {start|stop}"; exit 1 ;;
+esac

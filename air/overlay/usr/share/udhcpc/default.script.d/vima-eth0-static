@@ -1,0 +1,9 @@
+#!/bin/sh
+# Vima: na eth0 vzdy drz pevnou adresu pro SSH z laptopu (navic k DHCP).
+# Spousti ji udhcpc po kazde udalosti (deconfig, bound, renew ...).
+[ "$interface" = "eth0" ] || exit 0
+ETH_STATIC=10.42.0.2/24
+[ -f /etc/vima/vima.conf ] && . /etc/vima/vima.conf
+[ -n "$ETH_STATIC" ] || exit 0
+ip addr show dev eth0 | grep -q "inet ${ETH_STATIC%/*}/" || ip addr add "$ETH_STATIC" dev eth0
+exit 0
