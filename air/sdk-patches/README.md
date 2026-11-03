@@ -27,7 +27,8 @@ All eight patches apply cleanly to that commit, and the result matches the files
 
 **Known gap:** patches 0003, 0004 and 0006, the ISP tuning file and the 60 fps rkipc ini are not in a firmware
 image yet. A firmware built from the SDK alone boots in the old 30 fps mode without wrap. See
-[`../rkipc-wrap`](../rkipc-wrap) and [`../sc3336-60fps`](../sc3336-60fps) for how they are put on the board today.
+[`../rkipc-wrap`](../rkipc-wrap) and [`../sc3336-60fps`](../sc3336-60fps) for how they are put on the board today,
+and [`../deska-20261103`](../deska-20261103) for the files and checksums on the board.
 
 Licenses: rkipc is BSD-3-Clause, Copyright Rockchip Electronics Co., Ltd. ([text](../../LICENSES/BSD-3-Clause-rkipc.txt)).
 Kernel patches are GPL-2.0 ([text](../../LICENSES/GPL-2.0-only.txt)).

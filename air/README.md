@@ -9,6 +9,7 @@ Luckfox Pico Pro Max (Rockchip RV1106G3) running the Luckfox Pico SDK (Buildroot
 | [`rkipc-wrap`](rkipc-wrap) | Builds rkipc with encoder wrap outside the SDK and copies it to the board's `/oem` |
 | [`sc3336-60fps`](sc3336-60fps) | 1152×648 @ 60 fps camera mode: ISP tuning generator (`iq/vytvor-iq.sh`), rkipc ini script, deploy scripts |
 | [`tun`](tun) | Builds `tun.ko` from the SDK kernel's own `drivers/net/tun.c` (the SDK kernel doesn't include it) |
+| [`deska-20261103`](deska-20261103) | What runs on the board now outside the firmware: checksums and the rkipc ini |
 
 The scripts in `rkipc-wrap` and `sc3336-60fps/deska` are development scripts. They use paths and build outputs from the development laptop, so for now read them as a record of how the board was set up.
 
