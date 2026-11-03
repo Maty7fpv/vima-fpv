@@ -4,7 +4,7 @@
 
 Low-latency H.265 video over Wi-Fi (wfb-ng), built on cheap, off-the-shelf hardware: a Rockchip RV1106 board, a 3 MP camera and an RTL8812AU Wi-Fi adapter. No vendor lock-in, no proprietary goggles.
 
-> **Status (November 2026): working prototype on the bench.** Live video goes from the air unit to a Linux laptop over the air, and a two-way link runs back to the board. Best measured glass-to-glass latency so far: **52 ms**. Not flying yet. Outdoor range tests and lab measurements of transmit power and listen-before-talk come next.
+> **Status (November 2026): working prototype on the bench.** Live video goes from the air unit to a Linux laptop over the air, and a two-way link runs back to the board. Measured glass-to-glass latency: **45 ms** on average. Not flying yet. Outdoor range tests and lab measurements of transmit power and listen-before-talk come next.
 
 ---
 
@@ -21,17 +21,18 @@ Low-latency H.265 video over Wi-Fi (wfb-ng), built on cheap, off-the-shelf hardw
 
 ## Measurements
 
-Glass-to-glass latency: a stopwatch on screen, filmed at 480 fps together with the ground station display (240 Hz laptop panel), indoors.
+Glass-to-glass latency: the air unit's camera looks at a stopwatch on the laptop screen, and a phone films the stopwatch together with the received video at 480 fps (240 Hz laptop panel, indoors). The latency is the difference between the stopwatch and its copy in the video, averaged over many frames. A flashing square above the digits gives a second reading, which comes out higher: it sits near the top of the camera picture, the sensor reads those lines first, and they wait longest until the whole frame is encoded and sent.
 
-| Date | Video mode | Latency |
-|---|---|---|
-| 25 Oct 2026 | 2304×1296 @ 25 fps | 106 ms (72–174) |
-| 25 Oct 2026 | 1280×720 @ 30 fps | 83 ms (60–140) |
-| 27 Oct 2026 | 1152×648 @ 60 fps | 52 ms |
+| Date | Video mode | Stopwatch | Flashing square |
+|---|---|---|---|
+| 25 Oct 2026 | 2304×1296 @ 25 fps | 106 ms (n = 57) | 116 ms (n = 24) |
+| 25 Oct 2026 | 1280×720 @ 30 fps | 83 ms (n = 50) | 91 ms (n = 20) |
+| 27 Oct 2026 | 1152×648 @ 60 fps | 52 ms (n = 20) | 56 ms (n = 6) |
+| 3 Nov 2026 | 1152×648 @ 55 fps, encoder wrap, 4 ms exposure cap, smaller FEC blocks | **45 ms** (32–73, n = 32) | 54 ms (50–61, n = 17) |
 
-Newer settings (encoder wrap, 4 ms exposure cap, smaller FEC blocks) cut the delay on the board from 22.5 ms to 18.5 ms per frame. Their glass-to-glass latency has not been measured yet.
+The 3 Nov settings cut the delay on the board from 22.5 ms to 18.5 ms per frame (frame start → encoded frame).
 
-- 30 s transfer at MCS 4: 54.6 fps received, longest gap 42 ms, 0 lost packets
+- Transfer at MCS 4 on channel 149 (3 Nov): 54.8 fps received, longest gap 40 ms, 0 lost packets
 - Link capacity at MCS 4: ~9.7 Mbit/s. Above that, the board's single Cortex-A7 core is the bottleneck.
 - Range indoors: ~10 m through walls at low power. Outdoor range is not measured yet.
 
@@ -138,4 +139,4 @@ Radio regulations differ by country. The firmware is set to the CZ regulatory do
 
 Vima je open-source digitální FPV systém: přenos videa v H.265 přes Wi-Fi (wfb-ng) na levném, běžně dostupném hardwaru. Vzniká jako maturitní projekt.
 
-Stav v listopadu 2026: obraz z kamery jde vzduchem do notebooku, spoj funguje oběma směry a nejlepší naměřená latence sklo–sklo je 52 ms. Na řadě je test dosahu venku a změření výkonu a LBT v laboratoři. Na 2,4 GHz smí zařízení s LBT vysílat až 100 mW EIRP (EN 300 328), bez LBT v ČR 25 mW (VO-R/10), na 5,8 GHz 25 mW. Vima proto používá ve městě 5,8 GHz a mimo zástavbu 2,4 GHz; 100 mW s LBT až po změření výkonu a LBT v laboratoři.
+Stav v listopadu 2026: obraz z kamery jde vzduchem do notebooku, spoj funguje oběma směry a naměřená latence sklo–sklo je v průměru 45 ms. Na řadě je test dosahu venku a změření výkonu a LBT v laboratoři. Na 2,4 GHz smí zařízení s LBT vysílat až 100 mW EIRP (EN 300 328), bez LBT v ČR 25 mW (VO-R/10), na 5,8 GHz 25 mW. Vima proto používá ve městě 5,8 GHz a mimo zástavbu 2,4 GHz; 100 mW s LBT až po změření výkonu a LBT v laboratoři.
